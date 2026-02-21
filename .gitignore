@@ -1,0 +1,9 @@
+node_modules/
+dist/
+public/
+.geminitro/
+.env
+*.log
+.DS_Store
+dashboard/node_modules/
+dashboard/dist/
