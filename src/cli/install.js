@@ -31,23 +31,6 @@ const fetchLiveModels = async (port, apiKey) => {
   }
 };
 
-const buildProviderBlock = (models, port, apiKey) => {
-  const modelEntries = {};
-  for (const id of models) {
-    modelEntries[id] = {
-      name: `${id} (GemiNitro)`,
-      limit: { context: 1048576, output: 65536 },
-      modalities: { input: ["text", "image"], output: ["text"] },
-    };
-  }
-  return {
-    npm: "@ai-sdk/openai-compatible",
-    name: "GemiNitro",
-    options: { baseURL: `http://localhost:${port}/v1`, apiKey },
-    models: modelEntries,
-  };
-};
-
 const readConfig = (filePath) => {
   if (!fs.existsSync(filePath)) return {};
   try { return JSON.parse(fs.readFileSync(filePath, "utf8")); } catch { return {}; }
@@ -64,6 +47,16 @@ const readCachedModels = () => {
   } catch {
     return null;
   }
+};
+
+const writeEnvValue = (key, value) => {
+  const envPath = path.join(process.cwd(), ".env");
+  let content = "";
+  try { content = fs.readFileSync(envPath, "utf8"); } catch {}
+  const line = `${key}=${value}`;
+  const re = new RegExp(`^${key}=.*$`, "m");
+  content = re.test(content) ? content.replace(re, line) : content + (content.endsWith("\n") ? "" : "\n") + line + "\n";
+  fs.writeFileSync(envPath, content);
 };
 
 const installLaunchd = (execPath, scriptPath) => {
@@ -137,37 +130,227 @@ const clearInstallData = () => {
   try { fs.writeFileSync(config.MODELS_FILE, JSON.stringify([], null, 2)); } catch {}
 };
 
+const installOpenCode = async (models, port, apiKey, chalk, select) => {
+  const scope = await select({
+    message: "Where should GemiNitro be registered?",
+    choices: [
+      { name: `Global  (${OPENCODE_GLOBAL_CONFIG})  — all projects`, value: "global" },
+      { name: `Local   (./opencode.json)  — this project only`, value: "local" },
+    ],
+  });
+
+  const targetPath = scope === "global" ? OPENCODE_GLOBAL_CONFIG : path.join(process.cwd(), "opencode.json");
+
+  const modelEntries = {};
+  for (const id of models) {
+    modelEntries[id] = {
+      name: `${id} (GemiNitro)`,
+      limit: { context: 1048576, output: 65536 },
+      modalities: { input: ["text", "image"], output: ["text"] },
+    };
+  }
+  const providerBlock = {
+    npm: "@ai-sdk/openai-compatible",
+    name: "GemiNitro",
+    options: { baseURL: `http://localhost:${port}/v1`, apiKey },
+    models: modelEntries,
+  };
+
+  const existing = readConfig(targetPath);
+  const merged = {
+    $schema: "https://opencode.ai/config.json",
+    ...existing,
+    provider: { ...(existing.provider || {}), geminitro: providerBlock },
+  };
+
+  console.log(chalk.bold("\n  Config preview:\n"));
+  const preview = JSON.stringify({ provider: { geminitro: providerBlock } }, null, 2)
+    .split("\n").slice(0, 12).map((l) => "  " + chalk.gray(l)).join("\n");
+  console.log(preview);
+  console.log(chalk.gray("  ...\n"));
+
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fs.writeFileSync(targetPath, JSON.stringify(merged, null, 2) + "\n");
+  console.log(chalk.green(`  ✓ Written to ${targetPath}`));
+  console.log(chalk.gray("  Select models with:  geminitro/<model-id>"));
+};
+
+const installContinue = async (models, port, apiKey, chalk) => {
+  const yaml = require("js-yaml");
+  const configPath = path.join(os.homedir(), ".continue", "config.yaml");
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+
+  let doc = { name: "Local Agent", version: "1.0.0", schema: "v1", models: [] };
+  if (fs.existsSync(configPath)) {
+    try { doc = yaml.load(fs.readFileSync(configPath, "utf8")) || doc; } catch {}
+  }
+  if (!Array.isArray(doc.models)) doc.models = [];
+
+  doc.models = doc.models.filter((m) => !String(m.apiBase || "").includes(`localhost:${port}`));
+
+  const primary = models[0] ?? "gemini-2.0-flash";
+  doc.models.push({
+    name: `GemiNitro / ${primary}`,
+    provider: "openai",
+    model: primary,
+    apiBase: `http://localhost:${port}/v1`,
+    apiKey,
+    roles: ["chat", "edit", "apply"],
+  });
+
+  fs.writeFileSync(configPath, yaml.dump(doc, { lineWidth: 120 }));
+  console.log(chalk.green(`  ✓ Written to ${configPath}`));
+  console.log(chalk.gray("  Restart VS Code or reload the Continue extension to pick up the change."));
+  console.log(chalk.gray("  Select the model in Continue's model picker to use GemiNitro."));
+};
+
+const installAider = async (models, port, apiKey, chalk) => {
+  const yaml = require("js-yaml");
+  const configPath = path.join(os.homedir(), ".aider.conf.yml");
+
+  let doc = {};
+  if (fs.existsSync(configPath)) {
+    try { doc = yaml.load(fs.readFileSync(configPath, "utf8")) || {}; } catch {}
+  }
+
+  doc["openai-api-base"] = `http://localhost:${port}/v1`;
+  doc["openai-api-key"] = apiKey;
+  doc["model"] = models[0] ?? "gemini-2.0-flash";
+
+  fs.writeFileSync(configPath, yaml.dump(doc, { lineWidth: 120 }));
+  console.log(chalk.green(`  ✓ Written to ${configPath}`));
+  console.log(chalk.gray("  Aider will use GemiNitro for all future sessions."));
+  console.log(chalk.gray(`  Override model per-session with:  aider --model ${doc["model"]}`));
+};
+
+const installCodex = async (models, port, apiKey, chalk) => {
+  const TOML = require("@iarna/toml");
+  const configPath = path.join(os.homedir(), ".codex", "config.toml");
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+
+  let doc = {};
+  if (fs.existsSync(configPath)) {
+    try { doc = TOML.parse(fs.readFileSync(configPath, "utf8")); } catch {}
+  }
+
+  doc.provider = "openai";
+  doc.model = models[0] ?? "gemini-2.0-flash";
+  if (!doc.providers) doc.providers = {};
+  doc.providers.openai = { base_url: `http://localhost:${port}/v1`, api_key: apiKey };
+
+  fs.writeFileSync(configPath, TOML.stringify(doc));
+  console.log(chalk.green(`  ✓ Written to ${configPath}`));
+  console.log(chalk.gray("  Codex CLI will use GemiNitro as the OpenAI-compatible provider."));
+};
+
+const uninstallContinue = (port, chalk) => {
+  const yaml = require("js-yaml");
+  const configPath = path.join(os.homedir(), ".continue", "config.yaml");
+  if (!fs.existsSync(configPath)) return;
+  try {
+    let doc = yaml.load(fs.readFileSync(configPath, "utf8")) || {};
+    if (!Array.isArray(doc.models)) return;
+    const before = doc.models.length;
+    doc.models = doc.models.filter((m) => !String(m.apiBase || "").includes(`localhost:${port}`));
+    if (doc.models.length === before) return;
+    fs.writeFileSync(configPath, yaml.dump(doc, { lineWidth: 120 }));
+    console.log(chalk.green(`  ✓ Removed GemiNitro from ${configPath}`));
+  } catch {}
+};
+
+const uninstallAider = (port, chalk) => {
+  const yaml = require("js-yaml");
+  const configPath = path.join(os.homedir(), ".aider.conf.yml");
+  if (!fs.existsSync(configPath)) return;
+  try {
+    let doc = yaml.load(fs.readFileSync(configPath, "utf8")) || {};
+    if (!String(doc["openai-api-base"] || "").includes(`localhost:${port}`)) return;
+    delete doc["openai-api-base"];
+    delete doc["openai-api-key"];
+    delete doc["model"];
+    fs.writeFileSync(configPath, yaml.dump(doc, { lineWidth: 120 }));
+    console.log(chalk.green(`  ✓ Removed GemiNitro from ${configPath}`));
+  } catch {}
+};
+
+const uninstallCodex = (port, chalk) => {
+  const TOML = require("@iarna/toml");
+  const configPath = path.join(os.homedir(), ".codex", "config.toml");
+  if (!fs.existsSync(configPath)) return;
+  try {
+    let doc = TOML.parse(fs.readFileSync(configPath, "utf8"));
+    if (!String(doc?.providers?.openai?.base_url || "").includes(`localhost:${port}`)) return;
+    delete doc.providers.openai;
+    if (Object.keys(doc.providers).length === 0) delete doc.providers;
+    if (doc.provider === "openai") delete doc.provider;
+    delete doc.model;
+    fs.writeFileSync(configPath, TOML.stringify(doc));
+    console.log(chalk.green(`  ✓ Removed GemiNitro from ${configPath}`));
+  } catch {}
+};
+
+const uninstallLaunchd = () => {
+  const plistPath = path.join(os.homedir(), "Library", "LaunchAgents", "ai.geminitro.plist");
+  const logDir = path.join(os.homedir(), ".config", "geminitro", "logs");
+  let unloaded = false;
+  try {
+    require("child_process").execSync(`launchctl unload "${plistPath}" 2>/dev/null`, { stdio: "ignore" });
+    unloaded = true;
+  } catch {}
+  if (fs.existsSync(plistPath)) fs.rmSync(plistPath);
+  if (fs.existsSync(logDir)) fs.rmSync(logDir, { recursive: true, force: true });
+  return { ok: true, msg: unloaded ? "launchd service stopped and removed" : "launchd plist removed" };
+};
+
+const uninstallSystemd = () => {
+  const servicePath = path.join(os.homedir(), ".config", "systemd", "user", "geminitro.service");
+  try {
+    const { execSync } = require("child_process");
+    execSync("systemctl --user stop geminitro 2>/dev/null", { stdio: "ignore" });
+    execSync("systemctl --user disable geminitro 2>/dev/null", { stdio: "ignore" });
+  } catch {}
+  if (fs.existsSync(servicePath)) fs.rmSync(servicePath);
+  try { require("child_process").execSync("systemctl --user daemon-reload", { stdio: "ignore" }); } catch {}
+  return { ok: true, msg: "systemd service stopped and removed" };
+};
+
+const detectInstalledLocations = () => {
+  const candidates = [OPENCODE_GLOBAL_CONFIG, path.join(process.cwd(), "opencode.json")];
+  return candidates.filter((p) => {
+    try { return fs.existsSync(p) && readConfig(p)?.provider?.geminitro; } catch { return false; }
+  });
+};
+
+const hasAnyAgentInstalled = (port) => {
+  if (detectInstalledLocations().length > 0) return true;
+  try {
+    const yaml = require("js-yaml");
+    const doc = yaml.load(fs.readFileSync(path.join(os.homedir(), ".continue", "config.yaml"), "utf8"));
+    if (Array.isArray(doc?.models) && doc.models.some((m) => String(m.apiBase || "").includes(`localhost:${port}`))) return true;
+  } catch {}
+  try {
+    const yaml = require("js-yaml");
+    const doc = yaml.load(fs.readFileSync(path.join(os.homedir(), ".aider.conf.yml"), "utf8"));
+    if (String(doc?.["openai-api-base"] || "").includes(`localhost:${port}`)) return true;
+  } catch {}
+  try {
+    const TOML = require("@iarna/toml");
+    const doc = TOML.parse(fs.readFileSync(path.join(os.homedir(), ".codex", "config.toml"), "utf8"));
+    if (String(doc?.providers?.openai?.base_url || "").includes(`localhost:${port}`)) return true;
+  } catch {}
+  return false;
+};
+
 const run = async (agent = "opencode") => {
   const chalk = require("chalk");
-  const { select, confirm } = require("@inquirer/prompts");
+  const { select } = require("@inquirer/prompts");
   const { PORT, PROXY_API_KEY } = require("../../config");
 
   console.log(chalk.bold("\n  GemiNitro — Coding Agent Integration Setup\n"));
 
   clearInstallData();
 
-  const AGENT_CONFIGS = {
-    opencode: {
-      globalConfig: OPENCODE_GLOBAL_CONFIG,
-      localConfig: path.join(process.cwd(), "opencode.json"),
-      schema: "https://opencode.ai/config.json",
-      label: "OpenCode",
-    },
-  };
-
-  const agentConfig = AGENT_CONFIGS[agent] ?? AGENT_CONFIGS.opencode;
-
-  const scope = await select({
-    message: "Where should GemiNitro be registered?",
-    choices: [
-      { name: `Global  (${agentConfig.globalConfig})  — all projects`, value: "global" },
-      { name: `Local   (./opencode.json)  — this project only`, value: "local" },
-    ],
-  });
-
-  const targetPath = scope === "global" ? agentConfig.globalConfig : agentConfig.localConfig;
-
-  console.log(chalk.gray(`\n  Checking for running server on :${PORT}...`));
+  console.log(chalk.gray(`  Checking for running server on :${PORT}...`));
   const liveModels = await fetchLiveModels(PORT, PROXY_API_KEY);
   const cachedModels = readCachedModels();
   const models = liveModels ?? cachedModels ?? FALLBACK_MODELS;
@@ -182,23 +365,13 @@ const run = async (agent = "opencode") => {
     console.log(chalk.gray("    Start with `geminitro start` for a live model list\n"));
   }
 
-  const providerBlock = buildProviderBlock(models, PORT, PROXY_API_KEY);
-  const existing = readConfig(targetPath);
-  const merged = {
-    $schema: agentConfig.schema,
-    ...existing,
-    provider: { ...(existing.provider || {}), geminitro: providerBlock },
-  };
+  const agentLabel = { opencode: "OpenCode", continue: "Continue.dev", aider: "Aider", codex: "Codex CLI" }[agent] ?? agent;
+  console.log(chalk.bold(`\n  Installing for ${agentLabel}...\n`));
 
-  console.log(chalk.bold("\n  Config preview:\n"));
-  const preview = JSON.stringify({ provider: { geminitro: providerBlock } }, null, 2)
-    .split("\n").slice(0, 12).map((l) => "  " + chalk.gray(l)).join("\n");
-  console.log(preview);
-  console.log(chalk.gray("  ...\n"));
-
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.writeFileSync(targetPath, JSON.stringify(merged, null, 2) + "\n");
-  console.log(chalk.green(`  ✓ Written to ${targetPath}`));
+  if (agent === "opencode") await installOpenCode(models, PORT, PROXY_API_KEY, chalk, select);
+  else if (agent === "continue") await installContinue(models, PORT, PROXY_API_KEY, chalk);
+  else if (agent === "aider") await installAider(models, PORT, PROXY_API_KEY, chalk);
+  else if (agent === "codex") await installCodex(models, PORT, PROXY_API_KEY, chalk);
 
   const autoStart = await select({
     message: "\n  Auto-start GemiNitro on login?",
@@ -212,74 +385,28 @@ const run = async (agent = "opencode") => {
   if (autoStart !== "none") {
     const execPath = process.execPath;
     const scriptPath = require.resolve("../../bin/geminitro.js");
-    const result = autoStart === "launchd"
-      ? installLaunchd(execPath, scriptPath)
-      : installSystemd(execPath, scriptPath);
+    const result = autoStart === "launchd" ? installLaunchd(execPath, scriptPath) : installSystemd(execPath, scriptPath);
     console.log(chalk[result.ok ? "green" : "yellow"](`\n  ✓ ${result.msg}`));
   }
 
-  console.log(chalk.bold(chalk.green(`\n  ✓ GemiNitro registered as provider "geminitro" in ${agentConfig.label}`)));
-  console.log(chalk.gray("  Select models with:  geminitro/<model-id>"));
-  console.log(chalk.cyan("\n  Next: add at least one key →  geminitro key add <YOUR_GEMINI_KEY>\n"));
-};
-
-const uninstallLaunchd = () => {
-  const plistPath = path.join(os.homedir(), "Library", "LaunchAgents", "ai.geminitro.plist");
-  const logDir = path.join(os.homedir(), ".config", "geminitro", "logs");
-  let unloaded = false;
-
-  try {
-    require("child_process").execSync(`launchctl unload "${plistPath}" 2>/dev/null`, { stdio: "ignore" });
-    unloaded = true;
-  } catch {}
-
-  if (fs.existsSync(plistPath)) {
-    fs.rmSync(plistPath);
-  }
-  if (fs.existsSync(logDir)) {
-    fs.rmSync(logDir, { recursive: true, force: true });
-  }
-
-  return { ok: true, msg: unloaded ? "launchd service stopped and removed" : "launchd plist removed" };
-};
-
-const uninstallSystemd = () => {
-  const servicePath = path.join(os.homedir(), ".config", "systemd", "user", "geminitro.service");
-
-  try {
-    const { execSync } = require("child_process");
-    execSync("systemctl --user stop geminitro 2>/dev/null", { stdio: "ignore" });
-    execSync("systemctl --user disable geminitro 2>/dev/null", { stdio: "ignore" });
-  } catch {}
-
-  if (fs.existsSync(servicePath)) {
-    fs.rmSync(servicePath);
-  }
-
-  try {
-    require("child_process").execSync("systemctl --user daemon-reload", { stdio: "ignore" });
-  } catch {}
-
-  return { ok: true, msg: "systemd service stopped and removed" };
-};
-
-const detectInstalledLocations = () => {
-  const candidates = [
-    OPENCODE_GLOBAL_CONFIG,
-    path.join(process.cwd(), "opencode.json"),
-  ];
-  return candidates.filter((p) => {
-    try {
-      return fs.existsSync(p) && readConfig(p)?.provider?.geminitro;
-    } catch {
-      return false;
-    }
+  const autoUpdate = await select({
+    message: "\n  Enable auto-update? (checks for new releases on start)",
+    choices: [
+      { name: "No — I will run `geminitro update` manually", value: false },
+      { name: "Yes — apply updates automatically on startup", value: true },
+    ],
   });
+  writeEnvValue("AUTO_UPDATE", autoUpdate ? "true" : "false");
+  console.log(chalk.green(`  ✓ AUTO_UPDATE=${autoUpdate ? "true" : "false"} saved to .env`));
+
+  console.log(chalk.bold(chalk.green(`\n  ✓ GemiNitro registered in ${agentLabel}\n`)));
+  console.log(chalk.cyan("  Next: add at least one key →  geminitro key add <YOUR_GEMINI_KEY>\n"));
 };
 
 const runUninstall = async () => {
   const chalk = require("chalk");
   const { confirm } = require("@inquirer/prompts");
+  const { PORT } = require("../../config");
 
   console.log(chalk.bold("\n  GemiNitro — Uninstall\n"));
 
@@ -288,7 +415,7 @@ const runUninstall = async () => {
   const installedPaths = detectInstalledLocations();
   const hasService = fs.existsSync(plistPath) || fs.existsSync(servicePath);
 
-  if (installedPaths.length === 0 && !hasService) {
+  if (!hasAnyAgentInstalled(PORT) && !hasService) {
     console.log(chalk.yellow("  Nothing to remove — GemiNitro is not installed.\n"));
     process.exit(0);
   }
@@ -297,6 +424,28 @@ const runUninstall = async () => {
     console.log(chalk.gray("  Found GemiNitro registered in:"));
     for (const p of installedPaths) console.log(chalk.gray(`    • ${p}`));
   }
+
+  try {
+    const yaml = require("js-yaml");
+    const doc = yaml.load(fs.readFileSync(path.join(os.homedir(), ".continue", "config.yaml"), "utf8"));
+    if (Array.isArray(doc?.models) && doc.models.some((m) => String(m.apiBase || "").includes(`localhost:${PORT}`)))
+      console.log(chalk.gray(`    • ${path.join(os.homedir(), ".continue", "config.yaml")}  (Continue.dev)`));
+  } catch {}
+
+  try {
+    const yaml = require("js-yaml");
+    const doc = yaml.load(fs.readFileSync(path.join(os.homedir(), ".aider.conf.yml"), "utf8"));
+    if (String(doc?.["openai-api-base"] || "").includes(`localhost:${PORT}`))
+      console.log(chalk.gray(`    • ${path.join(os.homedir(), ".aider.conf.yml")}  (Aider)`));
+  } catch {}
+
+  try {
+    const TOML = require("@iarna/toml");
+    const doc = TOML.parse(fs.readFileSync(path.join(os.homedir(), ".codex", "config.toml"), "utf8"));
+    if (String(doc?.providers?.openai?.base_url || "").includes(`localhost:${PORT}`))
+      console.log(chalk.gray(`    • ${path.join(os.homedir(), ".codex", "config.toml")}  (Codex CLI)`));
+  } catch {}
+
   if (hasService) {
     if (fs.existsSync(plistPath)) console.log(chalk.gray("    • launchd service (macOS)"));
     if (fs.existsSync(servicePath)) console.log(chalk.gray("    • systemd service (Linux)"));
@@ -306,33 +455,23 @@ const runUninstall = async () => {
   const confirmed = await confirm({ message: "Remove all of the above?", default: true });
   if (!confirmed) { console.log(chalk.red("\n  Aborted.\n")); process.exit(0); }
 
-  let removed = false;
   for (const targetPath of installedPaths) {
     const existing = readConfig(targetPath);
     delete existing.provider.geminitro;
-    if (existing.provider && Object.keys(existing.provider).length === 0) {
-      delete existing.provider;
-    }
+    if (existing.provider && Object.keys(existing.provider).length === 0) delete existing.provider;
     fs.writeFileSync(targetPath, JSON.stringify(existing, null, 2) + "\n");
     console.log(chalk.green(`  ✓ Removed from ${targetPath}`));
-    removed = true;
   }
 
-  if (fs.existsSync(plistPath)) {
-    const result = uninstallLaunchd();
-    console.log(chalk.green(`  ✓ ${result.msg}`));
-  }
-  if (fs.existsSync(servicePath)) {
-    const result = uninstallSystemd();
-    console.log(chalk.green(`  ✓ ${result.msg}`));
-  }
+  uninstallContinue(PORT, chalk);
+  uninstallAider(PORT, chalk);
+  uninstallCodex(PORT, chalk);
 
-  if (removed) {
-    console.log(chalk.bold(chalk.green("\n  ✓ GemiNitro uninstalled")));
-    console.log(chalk.gray("  Your keys and data in .geminitro/ are preserved\n"));
-  } else if (hasService) {
-    console.log(chalk.bold(chalk.green("\n  ✓ Auto-start services removed\n")));
-  }
+  if (fs.existsSync(plistPath)) console.log(chalk.green(`  ✓ ${uninstallLaunchd().msg}`));
+  if (fs.existsSync(servicePath)) console.log(chalk.green(`  ✓ ${uninstallSystemd().msg}`));
+
+  console.log(chalk.bold(chalk.green("\n  ✓ GemiNitro uninstalled")));
+  console.log(chalk.gray("  Your keys and data in .geminitro/ are preserved\n"));
 };
 
 module.exports = { run, runUninstall };

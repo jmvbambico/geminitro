@@ -8,7 +8,7 @@ const path = require("path");
 
 program
   .name("geminitro")
-  .description("Gemini API proxy with key rotation — OpenCode plugin")
+  .description("Gemini API proxy with key rotation — multi-agent coding proxy")
   .version(version);
 
 program
@@ -127,14 +127,14 @@ program
 
 program
   .command("install")
-  .description("Register GemiNitro as an OpenCode provider (interactive)")
+  .description("Register GemiNitro with a coding agent (interactive)")
   .action(async () => {
     await require("../src/cli/install").run();
   });
 
 program
   .command("uninstall")
-  .description("Remove GemiNitro from OpenCode config (interactive)")
+  .description("Remove GemiNitro from all detected agent configs (interactive)")
   .action(async () => {
     await require("../src/cli/install").runUninstall();
   });
@@ -196,6 +196,38 @@ program
         }
       } catch {}
       console.log("");
+    }
+  });
+
+program
+  .command("update")
+  .description("Check for and apply the latest GemiNitro release")
+  .action(async () => {
+    const chalk = require("chalk");
+    const { checkForUpdate, applyUpdate } = require("../services/updateService");
+
+    console.log(chalk.gray("\n  Checking for updates..."));
+    const result = await checkForUpdate();
+
+    if (!result.available) {
+      console.log(chalk.green(`\n  ✓ Already up to date (v${result.current})\n`));
+      return;
+    }
+
+    console.log(chalk.yellow(`\n  Update available: ${result.latest}  (current: v${result.current})`));
+    console.log(chalk.gray(`  ${result.url}\n`));
+
+    const { confirm } = require("@inquirer/prompts");
+    const go = await confirm({ message: `Apply update to ${result.latest}?`, default: true });
+    if (!go) { console.log(chalk.red("  Aborted.\n")); return; }
+
+    console.log(chalk.gray("  Pulling latest changes and installing dependencies..."));
+    const applied = applyUpdate();
+    if (applied.ok) {
+      console.log(chalk.green(`\n  ✓ Updated to ${result.latest}. Restart GemiNitro to apply.\n`));
+    } else {
+      console.log(chalk.red(`\n  ✗ Update failed: ${applied.error}\n`));
+      process.exit(1);
     }
   });
 

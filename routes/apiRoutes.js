@@ -251,6 +251,31 @@ module.exports = (io) => {
 
   router.get("/api/stats", (req, res) => res.json(statsService.getStats()));
 
+  router.get("/api/settings", (req, res) => {
+    res.json({ autoUpdate: config.AUTO_UPDATE });
+  });
+
+  router.post("/api/settings", (req, res) => {
+    const { autoUpdate } = req.body;
+    if (typeof autoUpdate !== "boolean") {
+      return res.status(400).json({ error: "autoUpdate must be a boolean." });
+    }
+    const envPath = path.join(__dirname, "../.env");
+    let content = "";
+    try { content = fs.readFileSync(envPath, "utf8"); } catch {}
+    const line = `AUTO_UPDATE=${autoUpdate ? "true" : "false"}`;
+    const re = /^AUTO_UPDATE=.*$/m;
+    content = re.test(content) ? content.replace(re, line) : content + (content.endsWith("\n") ? "" : "\n") + line + "\n";
+    try {
+      fs.writeFileSync(envPath, content);
+      process.env.AUTO_UPDATE = autoUpdate ? "true" : "false";
+      config.AUTO_UPDATE = autoUpdate;
+      res.json({ success: true, autoUpdate });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to write .env: " + err.message });
+    }
+  });
+
   router.post("/api/theme", (req, res) => {
     const { css } = req.body;
     if (typeof css !== "string" || !css) {

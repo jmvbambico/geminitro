@@ -1,7 +1,7 @@
 {
   "name": "geminitro",
   "version": "1.0.0",
-  "description": "Gemini API proxy with key rotation — OpenCode plugin",
+  "description": "Gemini API proxy with key rotation — multi-agent coding proxy",
   "main": "server.js",
   "type": "commonjs",
   "bin": {
@@ -16,7 +16,8 @@
     "gemini",
     "proxy",
     "opencode",
-    "opencode-plugin",
+    "claude-code",
+    "coding-agent",
     "key-rotation",
     "ai"
   ],
@@ -28,6 +29,7 @@
   "license": "MIT",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@iarna/toml": "^2.2.5",
     "@inquirer/prompts": "^8.2.1",
     "chalk": "^4.1.2",
     "commander": "^14.0.3",
@@ -35,6 +37,7 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "helmet": "^8.1.0",
+    "js-yaml": "^4.1.1",
     "morgan": "^1.10.1",
     "open": "^8.4.2",
     "socket.io": "^4.8.3"

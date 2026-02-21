@@ -10,6 +10,7 @@ const config = require("./config");
 const keyService = require("./services/keyService");
 const geminiService = require("./services/geminiService");
 const statsService = require("./services/statsService");
+const updateService = require("./services/updateService");
 const apiRoutes = require("./routes/apiRoutes");
 const logger = require("./utils/logger");
 
@@ -44,6 +45,8 @@ try {
   console.error("Failed to initialize services:", error);
   process.exit(1);
 }
+
+updateService.backgroundCheck(logger, config.AUTO_UPDATE).catch(() => {});
 
 // Serve built dashboard at /dashboard
 const dashboardPath = path.join(__dirname, "public");

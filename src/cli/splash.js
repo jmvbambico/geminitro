@@ -27,7 +27,7 @@ const printSplash = (version, port) => {
   process.stdout.write(chalk.gray("  " + "─".repeat(Math.min(w - 4, 56))) + "\n");
   process.stdout.write(
     `  ${chalk.bold.white("GemiNitro")} ${chalk.gray("v" + version)}` +
-    `  ${chalk.gray("·")}  ${chalk.hex("#FF8800")("Gemini API Proxy")}  ${chalk.gray("·")}  ${chalk.cyan("OpenCode Plugin")}\n`
+    `  ${chalk.gray("·")}  ${chalk.hex("#FF8800")("Gemini API Proxy")}  ${chalk.gray("·")}  ${chalk.cyan("Coding Agent Proxy")}\n`
   );
   process.stdout.write(
     `  ${chalk.green("●")} ${chalk.white("http://localhost:" + port + "/v1")}` +

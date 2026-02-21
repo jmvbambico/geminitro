@@ -7,12 +7,33 @@ const OPENCODE_GLOBAL_CONFIG = path.join(os.homedir(), ".config", "opencode", "o
 const OPENCODE_LOCAL_CONFIG = path.join(process.cwd(), "opencode.json");
 
 const isProviderRegistered = () => {
+  const { PORT } = require("../../config");
+
   for (const p of [OPENCODE_GLOBAL_CONFIG, OPENCODE_LOCAL_CONFIG]) {
     try {
       const cfg = JSON.parse(fs.readFileSync(p, "utf8"));
       if (cfg?.provider?.geminitro) return true;
     } catch {}
   }
+
+  try {
+    const yaml = require("js-yaml");
+    const doc = yaml.load(fs.readFileSync(path.join(os.homedir(), ".continue", "config.yaml"), "utf8"));
+    if (Array.isArray(doc?.models) && doc.models.some((m) => String(m.apiBase || "").includes(`localhost:${PORT}`))) return true;
+  } catch {}
+
+  try {
+    const yaml = require("js-yaml");
+    const doc = yaml.load(fs.readFileSync(path.join(os.homedir(), ".aider.conf.yml"), "utf8"));
+    if (String(doc?.["openai-api-base"] || "").includes(`localhost:${PORT}`)) return true;
+  } catch {}
+
+  try {
+    const TOML = require("@iarna/toml");
+    const doc = TOML.parse(fs.readFileSync(path.join(os.homedir(), ".codex", "config.toml"), "utf8"));
+    if (String(doc?.providers?.openai?.base_url || "").includes(`localhost:${PORT}`)) return true;
+  } catch {}
+
   return false;
 };
 
@@ -71,6 +92,9 @@ const run = async (options = {}) => {
         message: "Which coding agent should GemiNitro be registered to?",
         choices: [
           { name: "OpenCode", value: "opencode" },
+          { name: "Continue.dev  (VS Code / JetBrains)", value: "continue" },
+          { name: "Aider  (CLI)", value: "aider" },
+          { name: "Codex CLI  (OpenAI CLI)", value: "codex" },
         ],
       });
       await require("./install").run(agent);

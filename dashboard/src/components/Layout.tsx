@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sun, Moon, Wifi, WifiOff, Settings, Plus, RefreshCw, Eye, EyeOff, X, Palette } from 'lucide-react'
 import { useDarkMode } from '@/hooks/useDarkMode'
@@ -85,11 +85,30 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('geminitro_api_key') ?? 'geminitro')
   const [showApiKey, setShowApiKey] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [autoUpdate, setAutoUpdate] = useState<boolean | null>(null)
+  const [autoUpdateSaving, setAutoUpdateSaving] = useState(false)
+
+  useEffect(() => {
+    api.get('/api/settings').then((data: any) => {
+      if (typeof data?.autoUpdate === 'boolean') setAutoUpdate(data.autoUpdate)
+    }).catch(() => {})
+  }, [])
 
   const saveKey = () => {
     localStorage.setItem('geminitro_api_key', apiKey)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+  }
+
+  const toggleAutoUpdate = async () => {
+    if (autoUpdate === null) return
+    const next = !autoUpdate
+    setAutoUpdateSaving(true)
+    try {
+      await api.post('/api/settings', { autoUpdate: next })
+      setAutoUpdate(next)
+    } catch {}
+    setAutoUpdateSaving(false)
   }
 
   return (
@@ -132,6 +151,23 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             </button>
           </div>
         </div>
+        {autoUpdate !== null && (
+          <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3">
+            <div>
+              <div className="text-sm font-medium">Auto Update</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Check and apply updates automatically on startup</div>
+            </div>
+            <button
+              onClick={toggleAutoUpdate}
+              disabled={autoUpdateSaving}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none disabled:opacity-50 ${autoUpdate ? 'bg-primary' : 'bg-muted'}`}
+              role="switch"
+              aria-checked={autoUpdate}
+            >
+              <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${autoUpdate ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+        )}
       </div>
     </Modal>
   )
