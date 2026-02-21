@@ -1,6 +1,7 @@
 <div align="center">
 
 # <img src="logo.webp" alt="GemiNitro" width="40" height="40" align="top"> GemiNitro
+
 **Lightweight Gemini API proxy with key pooling, automatic rotation, and a live web dashboard.**
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org)
@@ -77,12 +78,13 @@ Already configured?
 
 Run `geminitro install` and select your agent. Supported agents:
 
-| Agent | Config written | How to use |
-|---|---|---|
-| **OpenCode** | `~/.config/opencode/opencode.json` or `./opencode.json` | `--model geminitro/<model>` |
-| **Continue.dev** | `~/.continue/config.yaml` | Select model in Continue's picker |
-| **Aider** | `~/.aider.conf.yml` | Automatic — runs via GemiNitro by default |
-| **Codex CLI** | `~/.codex/config.toml` | Automatic — uses configured provider |
+| Agent            | Config written                                          | How to use                                |
+| ---------------- | ------------------------------------------------------- | ----------------------------------------- |
+| **OpenCode**     | `~/.config/opencode/opencode.json` or `./opencode.json` | `--model geminitro/<model>`               |
+| **Continue.dev** | `~/.continue/config.yaml`                               | Select model in Continue's picker         |
+| **Aider**        | `~/.aider.conf.yml`                                     | Automatic — runs via GemiNitro by default |
+| **Codex CLI**    | `~/.codex/config.toml`                                  | Automatic — uses configured provider      |
+| **OpenCrabs**    | `~/.opencrabs/config.toml` + `keys.toml`                | Select custom provider                    |
 
 ### OpenCode
 
@@ -150,6 +152,24 @@ base_url = "http://localhost:7536/v1"
 api_key = "geminitro"
 ```
 
+### OpenCrabs
+
+Written to `~/.opencrabs/config.toml` and `~/.opencrabs/keys.toml`:
+
+```toml
+# config.toml
+[providers.custom]
+enabled = true
+base_url = "http://localhost:7536/v1"
+default_model = "gemini-2.0-flash"
+```
+
+```toml
+# keys.toml (chmod 600)
+[providers.custom]
+api_key = "geminitro"
+```
+
 ---
 
 ## Web Dashboard
@@ -195,11 +215,11 @@ geminitro key list           List all keys with status
 
 ## Configuration
 
-| Variable        | Default      | Description                                     |
-| --------------- | ------------ | ----------------------------------------------- |
-| `PORT`          | `7536`       | Proxy server port (C₇H₅N₃O₆ — TNT)              |
-| `PROXY_API_KEY` | `geminitro`  | Bearer token clients send to this proxy          |
-| `AUTO_UPDATE`   | `false`      | Check for and apply updates automatically on start |
+| Variable        | Default     | Description                                        |
+| --------------- | ----------- | -------------------------------------------------- |
+| `PORT`          | `7536`      | Proxy server port (C₇H₅N₃O₆ — TNT)                 |
+| `PROXY_API_KEY` | `geminitro` | Bearer token clients send to this proxy            |
+| `AUTO_UPDATE`   | `false`     | Check for and apply updates automatically on start |
 
 Set in `.env` or as environment variables. Copy `.env.example` to get started.
 
@@ -233,9 +253,18 @@ npm install
 cp .env.example .env
 npm run dev        # auto-reload backend on file changes
 npm run build      # build dashboard → public/
+npm run lint       # lint root + dashboard
+npm run format     # format all files with Prettier
+npm run audit      # security audit (moderate+ vulns)
 ```
 
 The server starts on `:7536`. Dashboard source lives in `dashboard/` (Vite + React + Tailwind v4).
+
+### CI/CD
+
+- **GitHub Actions** — lint, security audit, build (Node 18/20/22 matrix) on every push/PR
+- **Dependabot** — weekly npm updates, monthly GitHub Actions updates
+- **Pre-commit hooks** — ESLint + Prettier + npm audit on every commit
 
 ---
 

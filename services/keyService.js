@@ -34,7 +34,14 @@ const loadKeys = () => {
 
 const saveKeys = async () => {
   try {
-    await fs.promises.writeFile(config.KEY_FILE, JSON.stringify(keyPool.map((k) => k.key), null, 2));
+    await fs.promises.writeFile(
+      config.KEY_FILE,
+      JSON.stringify(
+        keyPool.map((k) => k.key),
+        null,
+        2,
+      ),
+    );
   } catch (e) {
     logger.error("Failed to save keys", e);
   }
@@ -57,7 +64,10 @@ const getOptimalKey = (excludeKeys = []) => {
 
   const now = Date.now();
   const recoveredKey = keyPool.find(
-    (k) => k.status === "cooldown" && !excludeKeys.includes(k.key) && now - k.lastUsed > config.KEY_COOLDOWN_TIME,
+    (k) =>
+      k.status === "cooldown" &&
+      !excludeKeys.includes(k.key) &&
+      now - k.lastUsed > config.KEY_COOLDOWN_TIME,
   );
 
   if (recoveredKey) {
@@ -106,14 +116,15 @@ const incrementKeyUsage = (key) => {
 
 const getKeyPool = () => [...keyPool];
 
-const getSafeKeyPool = () => keyPool.map((k) => ({
-  tail: k.key.slice(-6),
-  status: k.status,
-  usage: k.usage,
-  errors: k.errors,
-  lastUsed: k.lastUsed,
-  cooldownUntil: k.status === "cooldown" ? k.lastUsed + config.KEY_COOLDOWN_TIME : null,
-}));
+const getSafeKeyPool = () =>
+  keyPool.map((k) => ({
+    tail: k.key.slice(-6),
+    status: k.status,
+    usage: k.usage,
+    errors: k.errors,
+    lastUsed: k.lastUsed,
+    cooldownUntil: k.status === "cooldown" ? k.lastUsed + config.KEY_COOLDOWN_TIME : null,
+  }));
 
 const getCooldownRemaining = (keyObj) => {
   if (keyObj.status !== "cooldown") return 0;
@@ -124,7 +135,6 @@ const getCooldownRemaining = (keyObj) => {
 
 const getPoolStatus = () => {
   const pool = getKeyPool();
-  const now = Date.now();
 
   const active = pool.filter((k) => k.status === "active").length;
   const cooling = pool.filter((k) => k.status === "cooldown");
@@ -134,9 +144,8 @@ const getPoolStatus = () => {
     remaining: getCooldownRemaining(k),
   }));
 
-  const minCooldown = cooling.length > 0
-    ? Math.min(...cooling.map((k) => getCooldownRemaining(k)))
-    : 0;
+  const minCooldown =
+    cooling.length > 0 ? Math.min(...cooling.map((k) => getCooldownRemaining(k))) : 0;
 
   return {
     total: pool.length,

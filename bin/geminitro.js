@@ -38,7 +38,10 @@ program
 
     const killByPort = (port) => {
       try {
-        const pids = execSync(`lsof -t -i :${port}`, { encoding: "utf8" }).trim().split("\n").filter(Boolean);
+        const pids = execSync(`lsof -t -i :${port}`, { encoding: "utf8" })
+          .trim()
+          .split("\n")
+          .filter(Boolean);
         for (const pid of pids) {
           try {
             process.kill(parseInt(pid), "SIGTERM");
@@ -78,7 +81,10 @@ program
 
     const killByPort = (p) => {
       try {
-        const pids = execSync(`lsof -t -i :${p}`, { encoding: "utf8" }).trim().split("\n").filter(Boolean);
+        const pids = execSync(`lsof -t -i :${p}`, { encoding: "utf8" })
+          .trim()
+          .split("\n")
+          .filter(Boolean);
         for (const pid of pids) {
           try {
             process.kill(parseInt(pid), "SIGTERM");
@@ -163,9 +169,9 @@ program
       console.log(chalk.green(`\n  ✓ GemiNitro is running`));
       console.log(
         chalk.gray(`  v${data.version}`) +
-        `  ·  uptime ${data.uptime}s` +
-        `  ·  ${chalk.green(data.keys.active)}/${data.keys.total} keys active` +
-        `  ·  ${data.models} models\n`
+          `  ·  uptime ${data.uptime}s` +
+          `  ·  ${chalk.green(data.keys.active)}/${data.keys.total} keys active` +
+          `  ·  ${data.models} models\n`,
       );
 
       if (data.keys.cooldown > 0) {
@@ -214,12 +220,17 @@ program
       return;
     }
 
-    console.log(chalk.yellow(`\n  Update available: ${result.latest}  (current: v${result.current})`));
+    console.log(
+      chalk.yellow(`\n  Update available: ${result.latest}  (current: v${result.current})`),
+    );
     console.log(chalk.gray(`  ${result.url}\n`));
 
     const { confirm } = require("@inquirer/prompts");
     const go = await confirm({ message: `Apply update to ${result.latest}?`, default: true });
-    if (!go) { console.log(chalk.red("  Aborted.\n")); return; }
+    if (!go) {
+      console.log(chalk.red("  Aborted.\n"));
+      return;
+    }
 
     console.log(chalk.gray("  Pulling latest changes and installing dependencies..."));
     const applied = applyUpdate();

@@ -54,7 +54,7 @@ const validateKey = async (apiKey) => {
       const models = data.models
         .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
         .map((m) => m.name.replace("models/", ""));
-      models.sort((a, b) => (a.includes("pro") ? -1 : 1));
+      models.sort((a, _b) => (a.includes("pro") ? -1 : 1));
       return { valid: true, models };
     }
 
@@ -96,7 +96,7 @@ const fetchGoogleModels = async () => {
       dynamicModels = data.models
         .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
         .map((m) => m.name.replace("models/", ""));
-      dynamicModels.sort((a, b) => (a.includes("pro") ? -1 : 1));
+      dynamicModels.sort((a, _b) => (a.includes("pro") ? -1 : 1));
       logger.modelRefresh(dynamicModels.length);
       await saveCachedModels(dynamicModels);
     } else if (data.error) {
@@ -125,7 +125,13 @@ const safetySettings = [
   { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
 ];
 
-const generateContent = async (apiKey, modelName, messages, generationConfig = {}, stream = false) => {
+const generateContent = async (
+  apiKey,
+  modelName,
+  messages,
+  generationConfig = {},
+  stream = false,
+) => {
   const genAI = new GoogleGenerativeAI(apiKey);
   const { contents, systemInstruction } = mapMessagesToGemini(messages);
   const model = genAI.getGenerativeModel({ model: modelName, systemInstruction, safetySettings });

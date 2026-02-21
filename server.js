@@ -60,7 +60,7 @@ if (fs.existsSync(dashboardPath)) {
 
 app.use("/", apiRoutes(io));
 
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   logger.error("Unhandled error", err);
   res.status(500).json({ error: "Internal Server Error" });
 });

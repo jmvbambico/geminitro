@@ -13,6 +13,7 @@
 ### Task 1: Install js-yaml and @iarna/toml dependencies
 
 **Files:**
+
 - Modify: `package.json`
 
 **Step 1: Add dependencies**
@@ -26,6 +27,7 @@ npm install js-yaml @iarna/toml
 ```bash
 node -e "require('js-yaml'); require('@iarna/toml'); console.log('ok')"
 ```
+
 Expected: `ok`
 
 ---
@@ -35,6 +37,7 @@ Expected: `ok`
 This refactor isolates the OpenCode-specific install so adding new agents doesn't expand `run()` further.
 
 **Files:**
+
 - Modify: `src/cli/install.js`
 
 **Step 1: Extract installOpenCode()**
@@ -48,6 +51,7 @@ Key invariant: `clearInstallData()` and the auto-start/auto-update prompts must 
 ```bash
 node -e "require('./src/cli/install'); console.log('load ok')"
 ```
+
 Expected: `load ok` (no errors on require)
 
 ---
@@ -72,6 +76,7 @@ models:
 One entry is appended per model. If the file doesn't exist, create it with the full header. If it already has a GemiNitro entry (detected by `apiBase` containing `localhost:7536`), skip adding duplicates.
 
 **Files:**
+
 - Modify: `src/cli/install.js`
 
 **Step 1: Write `installContinue(models, port, apiKey, chalk)` function**
@@ -84,12 +89,14 @@ const installContinue = async (models, port, apiKey, chalk) => {
 
   let doc = { name: "Local Agent", version: "1.0.0", schema: "v1", models: [] };
   if (fs.existsSync(configPath)) {
-    try { doc = yaml.load(fs.readFileSync(configPath, "utf8")) || doc; } catch {}
+    try {
+      doc = yaml.load(fs.readFileSync(configPath, "utf8")) || doc;
+    } catch {}
   }
   if (!Array.isArray(doc.models)) doc.models = [];
 
   // Remove existing GemiNitro entries
-  doc.models = doc.models.filter(m => !String(m.apiBase || "").includes(`localhost:${port}`));
+  doc.models = doc.models.filter((m) => !String(m.apiBase || "").includes(`localhost:${port}`));
 
   // Append one entry per model
   const primary = models[0] ?? "gemini-2.0-flash";
@@ -104,7 +111,9 @@ const installContinue = async (models, port, apiKey, chalk) => {
 
   fs.writeFileSync(configPath, yaml.dump(doc, { lineWidth: 120 }));
   console.log(chalk.green(`  ✓ Written to ${configPath}`));
-  console.log(chalk.gray("  Restart VS Code or reload the Continue extension to pick up the change."));
+  console.log(
+    chalk.gray("  Restart VS Code or reload the Continue extension to pick up the change."),
+  );
 };
 ```
 
@@ -137,6 +146,7 @@ model: gemini-2.0-flash
 If the file already exists, update the three keys in place (preserving other keys). Use js-yaml load/dump.
 
 **Files:**
+
 - Modify: `src/cli/install.js`
 
 **Step 1: Write `installAider(models, port, apiKey, chalk)` function**
@@ -148,7 +158,9 @@ const installAider = async (models, port, apiKey, chalk) => {
 
   let doc = {};
   if (fs.existsSync(configPath)) {
-    try { doc = yaml.load(fs.readFileSync(configPath, "utf8")) || {}; } catch {}
+    try {
+      doc = yaml.load(fs.readFileSync(configPath, "utf8")) || {};
+    } catch {}
   }
 
   doc["openai-api-base"] = `http://localhost:${port}/v1`;
@@ -193,6 +205,7 @@ api_key = "geminitro"
 If the file exists, merge: update `provider`, `model`, and the `[providers.openai]` table. Preserve other keys.
 
 **Files:**
+
 - Modify: `src/cli/install.js`
 
 **Step 1: Write `installCodex(models, port, apiKey, chalk)` function**
@@ -205,7 +218,9 @@ const installCodex = async (models, port, apiKey, chalk) => {
 
   let doc = {};
   if (fs.existsSync(configPath)) {
-    try { doc = TOML.parse(fs.readFileSync(configPath, "utf8")); } catch {}
+    try {
+      doc = TOML.parse(fs.readFileSync(configPath, "utf8"));
+    } catch {}
   }
 
   doc.provider = "openai";
@@ -238,6 +253,7 @@ node -e "require('./src/cli/install'); console.log('load ok')"
 The agent selector in `firstRun.js` only shows "OpenCode". Add the three new agents.
 
 **Files:**
+
 - Modify: `src/cli/firstRun.js`
 
 **Step 1: Expand choices array**
@@ -264,6 +280,7 @@ node -e "require('./src/cli/firstRun'); console.log('load ok')"
 Currently only checks OpenCode config files. Needs to also detect Continue.dev, Aider, Codex CLI registrations so the first-run warning doesn't fire unnecessarily for users who already installed via those agents.
 
 **Files:**
+
 - Modify: `src/cli/firstRun.js`
 
 **Step 1: Expand isProviderRegistered()**
@@ -285,7 +302,11 @@ const isProviderRegistered = () => {
     const yaml = require("js-yaml");
     const continuePath = path.join(os.homedir(), ".continue", "config.yaml");
     const doc = yaml.load(fs.readFileSync(continuePath, "utf8"));
-    if (Array.isArray(doc?.models) && doc.models.some(m => String(m.apiBase || "").includes(`localhost:${PORT}`))) return true;
+    if (
+      Array.isArray(doc?.models) &&
+      doc.models.some((m) => String(m.apiBase || "").includes(`localhost:${PORT}`))
+    )
+      return true;
   } catch {}
 
   // Aider
@@ -321,6 +342,7 @@ node -e "require('./src/cli/firstRun'); console.log('load ok')"
 Uninstall auto-detection currently only scans OpenCode config paths. It needs to also find and clean up Continue.dev, Aider, and Codex CLI registrations.
 
 **Files:**
+
 - Modify: `src/cli/install.js`
 
 **Step 1: Add per-agent uninstall functions**
@@ -333,7 +355,7 @@ const uninstallContinue = (port, chalk) => {
   try {
     let doc = yaml.load(fs.readFileSync(configPath, "utf8")) || {};
     if (!Array.isArray(doc.models)) return;
-    doc.models = doc.models.filter(m => !String(m.apiBase || "").includes(`localhost:${port}`));
+    doc.models = doc.models.filter((m) => !String(m.apiBase || "").includes(`localhost:${port}`));
     fs.writeFileSync(configPath, yaml.dump(doc, { lineWidth: 120 }));
     console.log(chalk.green(`  ✓ Removed GemiNitro from ${configPath}`));
   } catch {}
@@ -378,6 +400,7 @@ The function needs to return a structured result so `runUninstall` knows which a
 **Step 3: Update `runUninstall()` to call the three new uninstall functions**
 
 After removing OpenCode entries, call:
+
 ```js
 const { PORT } = require("../../config");
 uninstallContinue(PORT, chalk);
@@ -398,6 +421,7 @@ node -e "require('./src/cli/install'); console.log('load ok')"
 ### Task 9: Update `bin/geminitro.js` install/uninstall descriptions + README
 
 **Files:**
+
 - Modify: `bin/geminitro.js` — descriptions already agent-agnostic, no change needed
 - Modify: `README.md` — update CLI reference table, add Continue.dev/Aider/Codex to "Coding Agent Integration" section
 
@@ -418,6 +442,7 @@ Ensure `geminitro install` description mentions all four agents.
 ```bash
 npm run build
 ```
+
 Expected: `✓ built in X.XXs`, zero TypeScript errors.
 
 **Step 2: Smoke test require chain**
@@ -429,6 +454,7 @@ node -e "
   console.log('all modules load ok');
 "
 ```
+
 Expected: `all modules load ok`
 
 **Step 3: Verify js-yaml and @iarna/toml are in package.json dependencies**
@@ -436,6 +462,7 @@ Expected: `all modules load ok`
 ```bash
 node -e "const p = require('./package.json'); console.log(p.dependencies['js-yaml'], p.dependencies['@iarna/toml'])"
 ```
+
 Expected: two version strings printed.
 
 ---

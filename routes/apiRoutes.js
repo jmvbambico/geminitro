@@ -29,10 +29,14 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
 
   const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
   const currentKey = keyObj.key;
-  let targetModel = (req.body.model || "gemini-pro").replace("models/", "").replace(/^Proxy:\s*/, "");
+  let targetModel = (req.body.model || "gemini-pro")
+    .replace("models/", "")
+    .replace(/^Proxy:\s*/, "");
 
   if (!Array.isArray(req.body.messages)) {
-    return res.status(400).json({ error: { message: "Request body must include a `messages` array." } });
+    return res
+      .status(400)
+      .json({ error: { message: "Request body must include a `messages` array." } });
   }
 
   logger.proxyRequest(targetModel, currentKey.slice(-6));
@@ -45,30 +49,47 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
     if (req.body.top_k !== undefined) generationConfig.topK = req.body.top_k;
 
     if (req.body.stream) {
-      const result = await geminiService.generateContent(currentKey, targetModel, req.body.messages, generationConfig, true);
+      const result = await geminiService.generateContent(
+        currentKey,
+        targetModel,
+        req.body.messages,
+        generationConfig,
+        true,
+      );
 
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
       let isClientConnected = true;
-      req.on("close", () => { isClientConnected = false; });
+      req.on("close", () => {
+        isClientConnected = false;
+      });
 
       const startTime = Date.now();
       try {
         for await (const chunk of result.stream) {
           if (!isClientConnected) break;
           let text = "";
-          try { text = chunk.text(); } catch (_) { }
+          try {
+            text = chunk.text();
+          } catch {}
           if (text) {
-            res.write(`data: ${JSON.stringify({
-              id: requestId, object: "chat.completion.chunk",
-              created: Math.floor(Date.now() / 1000), model: targetModel,
-              choices: [{ delta: { content: text }, index: 0, finish_reason: null }],
-            })}\n\n`);
+            res.write(
+              `data: ${JSON.stringify({
+                id: requestId,
+                object: "chat.completion.chunk",
+                created: Math.floor(Date.now() / 1000),
+                model: targetModel,
+                choices: [{ delta: { content: text }, index: 0, finish_reason: null }],
+              })}\n\n`,
+            );
           }
         }
-        if (isClientConnected) { res.write(`data: [DONE]\n\n`); res.end(); }
+        if (isClientConnected) {
+          res.write(`data: [DONE]\n\n`);
+          res.end();
+        }
 
         keyService.incrementKeyUsage(currentKey);
         statsService.trackRequest(currentKey, targetModel, true);
@@ -84,7 +105,13 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
       }
     } else {
       const startTime = Date.now();
-      const result = await geminiService.generateContent(currentKey, targetModel, req.body.messages, generationConfig, false);
+      const result = await geminiService.generateContent(
+        currentKey,
+        targetModel,
+        req.body.messages,
+        generationConfig,
+        false,
+      );
       const text = result.response.text();
 
       keyService.incrementKeyUsage(currentKey);
@@ -93,15 +120,22 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
       logger.proxyResponse(targetModel, "success", Date.now() - startTime);
 
       res.json({
-        id: requestId, object: "chat.completion",
-        created: Math.floor(Date.now() / 1000), model: targetModel,
-        choices: [{ message: { role: "assistant", content: text }, finish_reason: "stop", index: 0 }],
+        id: requestId,
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: targetModel,
+        choices: [
+          { message: { role: "assistant", content: text }, finish_reason: "stop", index: 0 },
+        ],
       });
       io.emit("stats_update", keyService.getSafeKeyPool());
       io.emit("stats_update_full", statsService.getStats());
     }
   } catch (error) {
-    const isRateLimit = error.message.includes("429") || error.message.includes("Quota") || error.message.includes("exhausted");
+    const isRateLimit =
+      error.message.includes("429") ||
+      error.message.includes("Quota") ||
+      error.message.includes("exhausted");
 
     if (isRateLimit) {
       logger.keyCooldown(currentKey.slice(-6), "rate limit");
@@ -111,7 +145,11 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
 
       const newAttemptedKeys = [...attemptedKeys, currentKey];
       if (newAttemptedKeys.length < keyService.getKeyPool().length && !res.headersSent) {
-        logger.proxyRetry(targetModel, keyService.getOptimalKey(newAttemptedKeys)?.key?.slice(-6) || "??", newAttemptedKeys.length + 1);
+        logger.proxyRetry(
+          targetModel,
+          keyService.getOptimalKey(newAttemptedKeys)?.key?.slice(-6) || "??",
+          newAttemptedKeys.length + 1,
+        );
         await new Promise((r) => setTimeout(r, 200));
         return handleRequest(req, res, io, newAttemptedKeys);
       }
@@ -156,7 +194,9 @@ module.exports = (io) => {
   router.post("/v1/chat/completions", (req, res) => handleRequest(req, res, io, []));
 
   router.post(/^\/v1\/models\/([^/:]+):(streamGenerateContent|generateContent)$/, (req, res) => {
-    const match = req.path.match(/^\/v1\/models\/([^/:]+):(streamGenerateContent|generateContent)$/);
+    const match = req.path.match(
+      /^\/v1\/models\/([^/:]+):(streamGenerateContent|generateContent)$/,
+    );
     if (match) {
       req.body.model = match[1];
       req.body.stream = match[2] === "streamGenerateContent";
@@ -175,7 +215,10 @@ module.exports = (io) => {
     res.json({
       object: "list",
       data: geminiService.getDynamicModels().map((id) => ({
-        id, object: "model", created: 1677610602, owned_by: "google",
+        id,
+        object: "model",
+        created: 1677610602,
+        owned_by: "google",
       })),
     });
   });
@@ -262,10 +305,14 @@ module.exports = (io) => {
     }
     const envPath = path.join(__dirname, "../.env");
     let content = "";
-    try { content = fs.readFileSync(envPath, "utf8"); } catch {}
+    try {
+      content = fs.readFileSync(envPath, "utf8");
+    } catch {}
     const line = `AUTO_UPDATE=${autoUpdate ? "true" : "false"}`;
     const re = /^AUTO_UPDATE=.*$/m;
-    content = re.test(content) ? content.replace(re, line) : content + (content.endsWith("\n") ? "" : "\n") + line + "\n";
+    content = re.test(content)
+      ? content.replace(re, line)
+      : content + (content.endsWith("\n") ? "" : "\n") + line + "\n";
     try {
       fs.writeFileSync(envPath, content);
       process.env.AUTO_UPDATE = autoUpdate ? "true" : "false";

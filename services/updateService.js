@@ -7,7 +7,9 @@ const RELEASES_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const ROOT = path.join(__dirname, "..");
 
 const parseSemver = (tag) => {
-  const m = String(tag).replace(/^v/, "").match(/^(\d+)\.(\d+)\.(\d+)/);
+  const m = String(tag)
+    .replace(/^v/, "")
+    .match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!m) return null;
   return [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])];
 };
@@ -72,7 +74,9 @@ const backgroundCheck = async (logger, autoUpdate = false) => {
       logger.warn(`Auto-update failed: ${applied.error}`);
     }
   } else {
-    logger.info(`Update available: ${result.latest} (current: ${result.current}) — run \`geminitro update\``);
+    logger.info(
+      `Update available: ${result.latest} (current: ${result.current}) — run \`geminitro update\``,
+    );
   }
 };
 

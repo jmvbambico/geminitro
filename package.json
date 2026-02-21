@@ -1,6 +1,6 @@
 {
   "name": "geminitro",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Gemini API proxy with key rotation — multi-agent coding proxy",
   "main": "server.js",
   "type": "commonjs",
@@ -10,7 +10,25 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "build": "cd dashboard && npm install && npm run build"
+    "build": "cd dashboard && npm install && npm run build",
+    "lint": "eslint . && cd dashboard && npm run lint",
+    "lint:fix": "eslint . --fix && cd dashboard && npm run lint -- --fix",
+    "format": "prettier --write \"**/*.{js,json,md}\" \"!public/**\" \"!dashboard/dist/**\" && cd dashboard && prettier --write \"src/**/*.{ts,tsx,css}\"",
+    "format:check": "prettier --check \"**/*.{js,json,md}\" \"!public/**\" \"!dashboard/dist/**\" && cd dashboard && prettier --check \"src/**/*.{ts,tsx,css}\"",
+    "audit": "npm audit --audit-level=moderate",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.js": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ],
+    "dashboard/src/**/*.{ts,tsx,css}": [
+      "prettier --write"
+    ]
   },
   "keywords": [
     "gemini",
@@ -43,6 +61,14 @@
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.13"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.0.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.5",
+    "globals": "^17.3.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "nodemon": "^3.1.13",
+    "prettier": "^3.8.1"
   }
 }

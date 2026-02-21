@@ -1,28 +1,31 @@
-import { useEffect, useState } from 'react'
-import { api } from '@/lib/api'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 export function Stats() {
-  const [stats, setStats] = useState<any>(null)
+  const [stats, setStats] = useState<any>(null);
 
   useEffect(() => {
-    api.get('/api/stats').then(setStats).catch(() => {})
-  }, [])
+    api
+      .get("/api/stats")
+      .then(setStats)
+      .catch(() => {});
+  }, []);
 
-  if (!stats) return <div className="p-6 text-muted-foreground">Loading stats...</div>
+  if (!stats) return <div className="p-6 text-muted-foreground">Loading stats...</div>;
 
   const days = Object.entries(stats.daily ?? {})
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(-7)
     .map(([date, data]: [string, any]) => ({
-      date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      date: new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       success: (data as any).success ?? 0,
       errors: (data as any).errors ?? 0,
-    }))
+    }));
 
   const modelEntries = Object.entries(stats.models ?? {})
     .sort(([, a], [, b]) => (b as number) - (a as number))
-    .slice(0, 10) as [string, number][]
+    .slice(0, 10) as [string, number][];
 
   return (
     <div className="p-6 space-y-6">
@@ -43,20 +46,19 @@ export function Stats() {
 
       <div className="rounded-xl border border-border bg-card p-4">
         <h2 className="text-sm font-medium text-muted-foreground mb-4">Model Usage</h2>
-        {modelEntries.length === 0
-          ? <p className="text-sm text-muted-foreground">No model usage recorded yet.</p>
-          : (
-            <div className="space-y-2">
-              {modelEntries.map(([model, count]) => (
-                <div key={model} className="flex justify-between text-sm">
-                  <span className="font-mono text-muted-foreground truncate max-w-xs">{model}</span>
-                  <span className="tabular-nums font-medium">{count}</span>
-                </div>
-              ))}
-            </div>
-          )
-        }
+        {modelEntries.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No model usage recorded yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {modelEntries.map(([model, count]) => (
+              <div key={model} className="flex justify-between text-sm">
+                <span className="font-mono text-muted-foreground truncate max-w-xs">{model}</span>
+                <span className="tabular-nums font-medium">{count}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
-  )
+  );
 }

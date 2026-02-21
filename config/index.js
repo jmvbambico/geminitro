@@ -1,8 +1,7 @@
 const path = require("path");
 require("dotenv").config();
 
-const DATA_DIR = process.env.GEMINITRO_DATA_DIR ||
-  path.join(__dirname, "..", ".geminitro");
+const DATA_DIR = process.env.GEMINITRO_DATA_DIR || path.join(__dirname, "..", ".geminitro");
 
 module.exports = {
   PORT: parseInt(process.env.PORT || "7536", 10),

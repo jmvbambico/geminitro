@@ -16,7 +16,9 @@ const FALLBACK_MODELS = [
 
 const fetchLiveModels = async (port, apiKey) => {
   try {
-    const health = await fetch(`http://localhost:${port}/api/health`, { signal: AbortSignal.timeout(2000) });
+    const health = await fetch(`http://localhost:${port}/api/health`, {
+      signal: AbortSignal.timeout(2000),
+    });
     if (!health.ok) return null;
     const modelsRes = await fetch(`http://localhost:${port}/v1/models`, {
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -33,7 +35,11 @@ const fetchLiveModels = async (port, apiKey) => {
 
 const readConfig = (filePath) => {
   if (!fs.existsSync(filePath)) return {};
-  try { return JSON.parse(fs.readFileSync(filePath, "utf8")); } catch { return {}; }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return {};
+  }
 };
 
 const readCachedModels = () => {
@@ -52,10 +58,14 @@ const readCachedModels = () => {
 const writeEnvValue = (key, value) => {
   const envPath = path.join(process.cwd(), ".env");
   let content = "";
-  try { content = fs.readFileSync(envPath, "utf8"); } catch {}
+  try {
+    content = fs.readFileSync(envPath, "utf8");
+  } catch {}
   const line = `${key}=${value}`;
   const re = new RegExp(`^${key}=.*$`, "m");
-  content = re.test(content) ? content.replace(re, line) : content + (content.endsWith("\n") ? "" : "\n") + line + "\n";
+  content = re.test(content)
+    ? content.replace(re, line)
+    : content + (content.endsWith("\n") ? "" : "\n") + line + "\n";
   fs.writeFileSync(envPath, content);
 };
 
@@ -88,7 +98,10 @@ const installLaunchd = (execPath, scriptPath) => {
     require("child_process").execSync(`launchctl load "${plistPath}"`, { stdio: "ignore" });
     return { ok: true, msg: `launchd service installed and loaded` };
   } catch {
-    return { ok: true, msg: `plist written to ${plistPath} — load with: launchctl load "${plistPath}"` };
+    return {
+      ok: true,
+      msg: `plist written to ${plistPath} — load with: launchctl load "${plistPath}"`,
+    };
   }
 };
 
@@ -116,18 +129,33 @@ WantedBy=default.target
     execSync("systemctl --user start geminitro", { stdio: "ignore" });
     return { ok: true, msg: "systemd user service installed, enabled, and started" };
   } catch {
-    return { ok: true, msg: `service written to ${servicePath}\n  Run: systemctl --user daemon-reload && systemctl --user enable --now geminitro` };
+    return {
+      ok: true,
+      msg: `service written to ${servicePath}\n  Run: systemctl --user daemon-reload && systemctl --user enable --now geminitro`,
+    };
   }
 };
 
 const clearInstallData = () => {
   const config = require("../../config");
-  const empty = JSON.stringify({
-    totalRequests: 0, totalSuccess: 0, totalErrors: 0,
-    daily: {}, models: {}, keyUsage: {},
-  }, null, 2);
-  try { fs.writeFileSync(config.HISTORY_FILE, empty); } catch {}
-  try { fs.writeFileSync(config.MODELS_FILE, JSON.stringify([], null, 2)); } catch {}
+  const empty = JSON.stringify(
+    {
+      totalRequests: 0,
+      totalSuccess: 0,
+      totalErrors: 0,
+      daily: {},
+      models: {},
+      keyUsage: {},
+    },
+    null,
+    2,
+  );
+  try {
+    fs.writeFileSync(config.HISTORY_FILE, empty);
+  } catch {}
+  try {
+    fs.writeFileSync(config.MODELS_FILE, JSON.stringify([], null, 2));
+  } catch {}
 };
 
 const installOpenCode = async (models, port, apiKey, chalk, select) => {
@@ -139,7 +167,8 @@ const installOpenCode = async (models, port, apiKey, chalk, select) => {
     ],
   });
 
-  const targetPath = scope === "global" ? OPENCODE_GLOBAL_CONFIG : path.join(process.cwd(), "opencode.json");
+  const targetPath =
+    scope === "global" ? OPENCODE_GLOBAL_CONFIG : path.join(process.cwd(), "opencode.json");
 
   const modelEntries = {};
   for (const id of models) {
@@ -165,7 +194,10 @@ const installOpenCode = async (models, port, apiKey, chalk, select) => {
 
   console.log(chalk.bold("\n  Config preview:\n"));
   const preview = JSON.stringify({ provider: { geminitro: providerBlock } }, null, 2)
-    .split("\n").slice(0, 12).map((l) => "  " + chalk.gray(l)).join("\n");
+    .split("\n")
+    .slice(0, 12)
+    .map((l) => "  " + chalk.gray(l))
+    .join("\n");
   console.log(preview);
   console.log(chalk.gray("  ...\n"));
 
@@ -182,7 +214,9 @@ const installContinue = async (models, port, apiKey, chalk) => {
 
   let doc = { name: "Local Agent", version: "1.0.0", schema: "v1", models: [] };
   if (fs.existsSync(configPath)) {
-    try { doc = yaml.load(fs.readFileSync(configPath, "utf8")) || doc; } catch {}
+    try {
+      doc = yaml.load(fs.readFileSync(configPath, "utf8")) || doc;
+    } catch {}
   }
   if (!Array.isArray(doc.models)) doc.models = [];
 
@@ -200,7 +234,9 @@ const installContinue = async (models, port, apiKey, chalk) => {
 
   fs.writeFileSync(configPath, yaml.dump(doc, { lineWidth: 120 }));
   console.log(chalk.green(`  ✓ Written to ${configPath}`));
-  console.log(chalk.gray("  Restart VS Code or reload the Continue extension to pick up the change."));
+  console.log(
+    chalk.gray("  Restart VS Code or reload the Continue extension to pick up the change."),
+  );
   console.log(chalk.gray("  Select the model in Continue's model picker to use GemiNitro."));
 };
 
@@ -210,7 +246,9 @@ const installAider = async (models, port, apiKey, chalk) => {
 
   let doc = {};
   if (fs.existsSync(configPath)) {
-    try { doc = yaml.load(fs.readFileSync(configPath, "utf8")) || {}; } catch {}
+    try {
+      doc = yaml.load(fs.readFileSync(configPath, "utf8")) || {};
+    } catch {}
   }
 
   doc["openai-api-base"] = `http://localhost:${port}/v1`;
@@ -230,7 +268,9 @@ const installCodex = async (models, port, apiKey, chalk) => {
 
   let doc = {};
   if (fs.existsSync(configPath)) {
-    try { doc = TOML.parse(fs.readFileSync(configPath, "utf8")); } catch {}
+    try {
+      doc = TOML.parse(fs.readFileSync(configPath, "utf8"));
+    } catch {}
   }
 
   doc.provider = "openai";
@@ -241,6 +281,58 @@ const installCodex = async (models, port, apiKey, chalk) => {
   fs.writeFileSync(configPath, TOML.stringify(doc));
   console.log(chalk.green(`  ✓ Written to ${configPath}`));
   console.log(chalk.gray("  Codex CLI will use GemiNitro as the OpenAI-compatible provider."));
+};
+
+const installOpenCrabs = async (models, port, apiKey, chalk) => {
+  const TOML = require("@iarna/toml");
+  const configPath = path.join(os.homedir(), ".opencrabs", "config.toml");
+  const keysPath = path.join(os.homedir(), ".opencrabs", "keys.toml");
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+
+  // config.toml — provider settings (safe to read/merge)
+  let doc = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      doc = TOML.parse(fs.readFileSync(configPath, "utf8"));
+    } catch {}
+  }
+  if (!doc.providers) doc.providers = {};
+  doc.providers.custom = {
+    enabled: true,
+    base_url: `http://localhost:${port}/v1`,
+    default_model: models[0] ?? "gemini-2.0-flash",
+  };
+  fs.writeFileSync(configPath, TOML.stringify(doc));
+
+  // keys.toml — API key (chmod 600 expected by OpenCrabs)
+  let keys = {};
+  if (fs.existsSync(keysPath)) {
+    try {
+      keys = TOML.parse(fs.readFileSync(keysPath, "utf8"));
+    } catch {}
+  }
+  if (!keys.providers) keys.providers = {};
+  keys.providers.custom = { api_key: apiKey };
+  fs.writeFileSync(keysPath, TOML.stringify(keys));
+  try {
+    fs.chmodSync(keysPath, 0o600);
+  } catch {}
+
+  console.log(chalk.green(`  ✓ Written to ${configPath}`));
+  console.log(chalk.green(`  ✓ Written to ${keysPath}  (chmod 600)`));
+  console.log(
+    chalk.gray("  In OpenCrabs, select the custom provider or set OPENAI_BASE_URL env var."),
+  );
+  console.log(
+    chalk.yellow(
+      "  Note: if Anthropic/OpenAI/OpenRouter providers are also enabled in config.toml,",
+    ),
+  );
+  console.log(
+    chalk.yellow(
+      "  they take priority over custom. Disable them or set custom as the only enabled provider.",
+    ),
+  );
 };
 
 const uninstallContinue = (port, chalk) => {
@@ -289,17 +381,57 @@ const uninstallCodex = (port, chalk) => {
   } catch {}
 };
 
+const uninstallOpenCrabs = (port, chalk) => {
+  const TOML = require("@iarna/toml");
+  const configPath = path.join(os.homedir(), ".opencrabs", "config.toml");
+  const keysPath = path.join(os.homedir(), ".opencrabs", "keys.toml");
+
+  let removed = false;
+
+  if (fs.existsSync(configPath)) {
+    try {
+      const doc = TOML.parse(fs.readFileSync(configPath, "utf8"));
+      const url = doc?.providers?.custom?.base_url ?? "";
+      if (url.includes(`localhost:${port}`)) {
+        delete doc.providers.custom;
+        if (Object.keys(doc.providers).length === 0) delete doc.providers;
+        fs.writeFileSync(configPath, TOML.stringify(doc));
+        removed = true;
+      }
+    } catch {}
+  }
+
+  if (fs.existsSync(keysPath)) {
+    try {
+      const keys = TOML.parse(fs.readFileSync(keysPath, "utf8"));
+      if (keys?.providers?.custom) {
+        delete keys.providers.custom;
+        if (Object.keys(keys.providers).length === 0) delete keys.providers;
+        fs.writeFileSync(keysPath, TOML.stringify(keys));
+        removed = true;
+      }
+    } catch {}
+  }
+
+  if (removed) console.log(chalk.green(`  ✓ Removed GemiNitro from OpenCrabs config`));
+};
+
 const uninstallLaunchd = () => {
   const plistPath = path.join(os.homedir(), "Library", "LaunchAgents", "ai.geminitro.plist");
   const logDir = path.join(os.homedir(), ".config", "geminitro", "logs");
   let unloaded = false;
   try {
-    require("child_process").execSync(`launchctl unload "${plistPath}" 2>/dev/null`, { stdio: "ignore" });
+    require("child_process").execSync(`launchctl unload "${plistPath}" 2>/dev/null`, {
+      stdio: "ignore",
+    });
     unloaded = true;
   } catch {}
   if (fs.existsSync(plistPath)) fs.rmSync(plistPath);
   if (fs.existsSync(logDir)) fs.rmSync(logDir, { recursive: true, force: true });
-  return { ok: true, msg: unloaded ? "launchd service stopped and removed" : "launchd plist removed" };
+  return {
+    ok: true,
+    msg: unloaded ? "launchd service stopped and removed" : "launchd plist removed",
+  };
 };
 
 const uninstallSystemd = () => {
@@ -310,14 +442,20 @@ const uninstallSystemd = () => {
     execSync("systemctl --user disable geminitro 2>/dev/null", { stdio: "ignore" });
   } catch {}
   if (fs.existsSync(servicePath)) fs.rmSync(servicePath);
-  try { require("child_process").execSync("systemctl --user daemon-reload", { stdio: "ignore" }); } catch {}
+  try {
+    require("child_process").execSync("systemctl --user daemon-reload", { stdio: "ignore" });
+  } catch {}
   return { ok: true, msg: "systemd service stopped and removed" };
 };
 
 const detectInstalledLocations = () => {
   const candidates = [OPENCODE_GLOBAL_CONFIG, path.join(process.cwd(), "opencode.json")];
   return candidates.filter((p) => {
-    try { return fs.existsSync(p) && readConfig(p)?.provider?.geminitro; } catch { return false; }
+    try {
+      return fs.existsSync(p) && readConfig(p)?.provider?.geminitro;
+    } catch {
+      return false;
+    }
   });
 };
 
@@ -325,8 +463,14 @@ const hasAnyAgentInstalled = (port) => {
   if (detectInstalledLocations().length > 0) return true;
   try {
     const yaml = require("js-yaml");
-    const doc = yaml.load(fs.readFileSync(path.join(os.homedir(), ".continue", "config.yaml"), "utf8"));
-    if (Array.isArray(doc?.models) && doc.models.some((m) => String(m.apiBase || "").includes(`localhost:${port}`))) return true;
+    const doc = yaml.load(
+      fs.readFileSync(path.join(os.homedir(), ".continue", "config.yaml"), "utf8"),
+    );
+    if (
+      Array.isArray(doc?.models) &&
+      doc.models.some((m) => String(m.apiBase || "").includes(`localhost:${port}`))
+    )
+      return true;
   } catch {}
   try {
     const yaml = require("js-yaml");
@@ -335,8 +479,17 @@ const hasAnyAgentInstalled = (port) => {
   } catch {}
   try {
     const TOML = require("@iarna/toml");
-    const doc = TOML.parse(fs.readFileSync(path.join(os.homedir(), ".codex", "config.toml"), "utf8"));
+    const doc = TOML.parse(
+      fs.readFileSync(path.join(os.homedir(), ".codex", "config.toml"), "utf8"),
+    );
     if (String(doc?.providers?.openai?.base_url || "").includes(`localhost:${port}`)) return true;
+  } catch {}
+  try {
+    const TOML = require("@iarna/toml");
+    const doc = TOML.parse(
+      fs.readFileSync(path.join(os.homedir(), ".opencrabs", "config.toml"), "utf8"),
+    );
+    if (String(doc?.providers?.custom?.base_url ?? "").includes(`localhost:${port}`)) return true;
   } catch {}
   return false;
 };
@@ -361,17 +514,27 @@ const run = async (agent = "opencode") => {
     console.log(chalk.yellow(`  ⚠ Server not running — using ${models.length} cached models`));
     console.log(chalk.gray("    Start with `geminitro start` to refresh model list\n"));
   } else {
-    console.log(chalk.yellow(`  ⚠ Server not running — using ${models.length} built-in model definitions`));
+    console.log(
+      chalk.yellow(`  ⚠ Server not running — using ${models.length} built-in model definitions`),
+    );
     console.log(chalk.gray("    Start with `geminitro start` for a live model list\n"));
   }
 
-  const agentLabel = { opencode: "OpenCode", continue: "Continue.dev", aider: "Aider", codex: "Codex CLI" }[agent] ?? agent;
+  const agentLabel =
+    {
+      opencode: "OpenCode",
+      continue: "Continue.dev",
+      aider: "Aider",
+      codex: "Codex CLI",
+      opencrabs: "OpenCrabs",
+    }[agent] ?? agent;
   console.log(chalk.bold(`\n  Installing for ${agentLabel}...\n`));
 
   if (agent === "opencode") await installOpenCode(models, PORT, PROXY_API_KEY, chalk, select);
   else if (agent === "continue") await installContinue(models, PORT, PROXY_API_KEY, chalk);
   else if (agent === "aider") await installAider(models, PORT, PROXY_API_KEY, chalk);
   else if (agent === "codex") await installCodex(models, PORT, PROXY_API_KEY, chalk);
+  else if (agent === "opencrabs") await installOpenCrabs(models, PORT, PROXY_API_KEY, chalk);
 
   const autoStart = await select({
     message: "\n  Auto-start GemiNitro on login?",
@@ -385,7 +548,10 @@ const run = async (agent = "opencode") => {
   if (autoStart !== "none") {
     const execPath = process.execPath;
     const scriptPath = require.resolve("../../bin/geminitro.js");
-    const result = autoStart === "launchd" ? installLaunchd(execPath, scriptPath) : installSystemd(execPath, scriptPath);
+    const result =
+      autoStart === "launchd"
+        ? installLaunchd(execPath, scriptPath)
+        : installSystemd(execPath, scriptPath);
     console.log(chalk[result.ok ? "green" : "yellow"](`\n  ✓ ${result.msg}`));
   }
 
@@ -427,9 +593,16 @@ const runUninstall = async () => {
 
   try {
     const yaml = require("js-yaml");
-    const doc = yaml.load(fs.readFileSync(path.join(os.homedir(), ".continue", "config.yaml"), "utf8"));
-    if (Array.isArray(doc?.models) && doc.models.some((m) => String(m.apiBase || "").includes(`localhost:${PORT}`)))
-      console.log(chalk.gray(`    • ${path.join(os.homedir(), ".continue", "config.yaml")}  (Continue.dev)`));
+    const doc = yaml.load(
+      fs.readFileSync(path.join(os.homedir(), ".continue", "config.yaml"), "utf8"),
+    );
+    if (
+      Array.isArray(doc?.models) &&
+      doc.models.some((m) => String(m.apiBase || "").includes(`localhost:${PORT}`))
+    )
+      console.log(
+        chalk.gray(`    • ${path.join(os.homedir(), ".continue", "config.yaml")}  (Continue.dev)`),
+      );
   } catch {}
 
   try {
@@ -441,9 +614,23 @@ const runUninstall = async () => {
 
   try {
     const TOML = require("@iarna/toml");
-    const doc = TOML.parse(fs.readFileSync(path.join(os.homedir(), ".codex", "config.toml"), "utf8"));
+    const doc = TOML.parse(
+      fs.readFileSync(path.join(os.homedir(), ".codex", "config.toml"), "utf8"),
+    );
     if (String(doc?.providers?.openai?.base_url || "").includes(`localhost:${PORT}`))
-      console.log(chalk.gray(`    • ${path.join(os.homedir(), ".codex", "config.toml")}  (Codex CLI)`));
+      console.log(
+        chalk.gray(`    • ${path.join(os.homedir(), ".codex", "config.toml")}  (Codex CLI)`),
+      );
+  } catch {}
+  try {
+    const TOML = require("@iarna/toml");
+    const doc = TOML.parse(
+      fs.readFileSync(path.join(os.homedir(), ".opencrabs", "config.toml"), "utf8"),
+    );
+    if (String(doc?.providers?.custom?.base_url ?? "").includes(`localhost:${PORT}`))
+      console.log(
+        chalk.gray(`    • ${path.join(os.homedir(), ".opencrabs", "config.toml")}  (OpenCrabs)`),
+      );
   } catch {}
 
   if (hasService) {
@@ -453,7 +640,10 @@ const runUninstall = async () => {
   console.log();
 
   const confirmed = await confirm({ message: "Remove all of the above?", default: true });
-  if (!confirmed) { console.log(chalk.red("\n  Aborted.\n")); process.exit(0); }
+  if (!confirmed) {
+    console.log(chalk.red("\n  Aborted.\n"));
+    process.exit(0);
+  }
 
   for (const targetPath of installedPaths) {
     const existing = readConfig(targetPath);
@@ -466,6 +656,7 @@ const runUninstall = async () => {
   uninstallContinue(PORT, chalk);
   uninstallAider(PORT, chalk);
   uninstallCodex(PORT, chalk);
+  uninstallOpenCrabs(PORT, chalk);
 
   if (fs.existsSync(plistPath)) console.log(chalk.green(`  ✓ ${uninstallLaunchd().msg}`));
   if (fs.existsSync(servicePath)) console.log(chalk.green(`  ✓ ${uninstallSystemd().msg}`));

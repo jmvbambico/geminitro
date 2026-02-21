@@ -33,7 +33,7 @@ const validateKeyDirect = async (key) => {
       const models = data.models
         .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
         .map((m) => m.name.replace("models/", ""));
-      models.sort((a, b) => (a.includes("pro") ? -1 : 1));
+      models.sort((a, _b) => (a.includes("pro") ? -1 : 1));
       return { valid: true, models };
     }
 
@@ -77,11 +77,17 @@ const addKeyDirect = (key, models) => {
 };
 
 const add = async (key) => {
-  if (!key) { console.error(chalk.red("\n  Usage: geminitro key add <API_KEY>\n")); process.exit(1); }
+  if (!key) {
+    console.error(chalk.red("\n  Usage: geminitro key add <API_KEY>\n"));
+    process.exit(1);
+  }
 
   let res;
   try {
-    res = await request("/api/keys", { method: "POST", body: JSON.stringify({ key, validate: true }) });
+    res = await request("/api/keys", {
+      method: "POST",
+      body: JSON.stringify({ key, validate: true }),
+    });
   } catch {
     console.log(chalk.gray("\n  Server not running — validating key directly..."));
 
@@ -128,7 +134,8 @@ const add = async (key) => {
     console.log("");
   } else {
     const e = await res.json().catch(() => ({}));
-    console.error(chalk.red(`\n  ✗ ${e.error || "Failed to add key"}\n`)); process.exit(1);
+    console.error(chalk.red(`\n  ✗ ${e.error || "Failed to add key"}\n`));
+    process.exit(1);
   }
 };
 
@@ -148,7 +155,10 @@ const readKeysDirect = () => {
 };
 
 const remove = async (fragment) => {
-  if (!fragment) { console.error(chalk.red("\n  Usage: geminitro key remove <last-6-chars>\n")); process.exit(1); }
+  if (!fragment) {
+    console.error(chalk.red("\n  Usage: geminitro key remove <last-6-chars>\n"));
+    process.exit(1);
+  }
 
   let res;
   try {
@@ -158,15 +168,19 @@ const remove = async (fragment) => {
     const keyFile = config.KEY_FILE;
 
     if (!fs.existsSync(keyFile)) {
-      console.error(chalk.red("\n  ✗ No keys configured\n")); process.exit(1);
+      console.error(chalk.red("\n  ✗ No keys configured\n"));
+      process.exit(1);
     }
 
     let keys = [];
-    try { keys = JSON.parse(fs.readFileSync(keyFile, "utf8")); } catch {}
+    try {
+      keys = JSON.parse(fs.readFileSync(keyFile, "utf8"));
+    } catch {}
 
     const idx = keys.findIndex((k) => k.endsWith(fragment));
     if (idx === -1) {
-      console.error(chalk.red("\n  ✗ Key not found\n")); process.exit(1);
+      console.error(chalk.red("\n  ✗ Key not found\n"));
+      process.exit(1);
     }
 
     keys.splice(idx, 1);
@@ -175,8 +189,12 @@ const remove = async (fragment) => {
     return;
   }
 
-  if (res.ok) { console.log(chalk.green("\n  ✓ Key removed\n")); }
-  else { console.error(chalk.red("\n  ✗ Key not found\n")); process.exit(1); }
+  if (res.ok) {
+    console.log(chalk.green("\n  ✓ Key removed\n"));
+  } else {
+    console.error(chalk.red("\n  ✗ Key not found\n"));
+    process.exit(1);
+  }
 };
 
 const list = async () => {
@@ -189,7 +207,11 @@ const list = async () => {
   } catch {
     const keys = readKeysDirect();
     if (keys.length === 0) {
-      console.log(chalk.yellow("\n  No keys configured.\n  Add one with: geminitro key add <YOUR_GEMINI_KEY>\n"));
+      console.log(
+        chalk.yellow(
+          "\n  No keys configured.\n  Add one with: geminitro key add <YOUR_GEMINI_KEY>\n",
+        ),
+      );
       return;
     }
 
@@ -204,7 +226,11 @@ const list = async () => {
 
   const keys = await res.json();
   if (!Array.isArray(keys) || keys.length === 0) {
-    console.log(chalk.yellow("\n  No keys configured.\n  Add one with: geminitro key add <YOUR_GEMINI_KEY>\n"));
+    console.log(
+      chalk.yellow(
+        "\n  No keys configured.\n  Add one with: geminitro key add <YOUR_GEMINI_KEY>\n",
+      ),
+    );
     return;
   }
   console.log(chalk.bold("\n  Key Pool\n"));
@@ -213,10 +239,14 @@ const list = async () => {
     const tail = k.key ? `...${k.key.slice(-8)}` : "???";
 
     if (k.status === "active") {
-      console.log(`  ${chalk.green("active  ")}  ${chalk.white(tail)}  ${chalk.gray(`${k.usage ?? 0} req  ${k.errors ?? 0} err`)}`);
+      console.log(
+        `  ${chalk.green("active  ")}  ${chalk.white(tail)}  ${chalk.gray(`${k.usage ?? 0} req  ${k.errors ?? 0} err`)}`,
+      );
     } else {
       const remaining = Math.max(0, Math.ceil((COOLDOWN_TIME - (now - (k.lastUsed || 0))) / 1000));
-      console.log(`  ${chalk.yellow("cooldown")}  ${chalk.white(tail)}  ${chalk.gray(`${k.usage ?? 0} req  ${k.errors ?? 0} err`)}  ${chalk.yellow(`${remaining}s`)}`);
+      console.log(
+        `  ${chalk.yellow("cooldown")}  ${chalk.white(tail)}  ${chalk.gray(`${k.usage ?? 0} req  ${k.errors ?? 0} err`)}  ${chalk.yellow(`${remaining}s`)}`,
+      );
     }
   }
   console.log("");

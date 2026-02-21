@@ -1,47 +1,47 @@
-import { useState } from 'react'
-import { api } from '@/lib/api'
-import type { KeyEntry } from '@/hooks/useSocket'
-import { Trash2, Plus, RefreshCw } from 'lucide-react'
+import { useState } from "react";
+import { api } from "@/lib/api";
+import type { KeyEntry } from "@/hooks/useSocket";
+import { Trash2, Plus, RefreshCw } from "lucide-react";
 
 const statusColors: Record<string, string> = {
-  active: 'text-green-500 bg-green-500/10',
-  idle: 'text-blue-500 bg-blue-500/10',
-  cooldown: 'text-yellow-500 bg-yellow-500/10',
-}
+  active: "text-green-500 bg-green-500/10",
+  idle: "text-blue-500 bg-blue-500/10",
+  cooldown: "text-yellow-500 bg-yellow-500/10",
+};
 
 export function Keys({ keys }: { keys: KeyEntry[] }) {
-  const [newKey, setNewKey] = useState('')
-  const [adding, setAdding] = useState(false)
-  const [addError, setAddError] = useState('')
-  const [addSuccess, setAddSuccess] = useState('')
-  const [removing, setRemoving] = useState<string | null>(null)
+  const [newKey, setNewKey] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState("");
+  const [addSuccess, setAddSuccess] = useState("");
+  const [removing, setRemoving] = useState<string | null>(null);
 
   const handleAdd = async () => {
-    if (!newKey.trim()) return
-    setAdding(true)
-    setAddError('')
-    setAddSuccess('')
+    if (!newKey.trim()) return;
+    setAdding(true);
+    setAddError("");
+    setAddSuccess("");
     try {
-      const res = await api.post('/api/keys', { key: newKey.trim() })
+      const res = await api.post("/api/keys", { key: newKey.trim() });
       if (res.error) {
-        setAddError(res.error)
+        setAddError(res.error);
       } else {
-        setAddSuccess(`Key added. ${res.models?.length ?? 0} models available.`)
-        setNewKey('')
+        setAddSuccess(`Key added. ${res.models?.length ?? 0} models available.`);
+        setNewKey("");
       }
     } catch {
-      setAddError('Request failed — is the server running?')
+      setAddError("Request failed — is the server running?");
     }
-    setAdding(false)
-  }
+    setAdding(false);
+  };
 
   const handleRemove = async (tail: string) => {
-    setRemoving(tail)
+    setRemoving(tail);
     try {
-      await api.delete(`/api/keys/${tail}`)
+      await api.delete(`/api/keys/${tail}`);
     } catch {}
-    setRemoving(null)
-  }
+    setRemoving(null);
+  };
 
   return (
     <div className="p-6">
@@ -54,8 +54,8 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
             type="password"
             placeholder="AIzaSy..."
             value={newKey}
-            onChange={e => setNewKey(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            onChange={(e) => setNewKey(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
           <button
@@ -64,7 +64,7 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
           >
             {adding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-            {adding ? 'Validating...' : 'Add'}
+            {adding ? "Validating..." : "Add"}
           </button>
         </div>
         {addError && <p className="text-sm text-destructive mt-2">{addError}</p>}
@@ -90,21 +90,25 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
                 </td>
               </tr>
             )}
-            {keys.map(k => (
+            {keys.map((k) => (
               <tr key={k.tail} className="border-b border-border last:border-0">
                 <td className="px-4 py-3 font-mono">...{k.tail}</td>
                 <td className="px-4 py-3">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[k.status] ?? 'text-muted-foreground bg-muted'}`}>
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[k.status] ?? "text-muted-foreground bg-muted"}`}
+                  >
                     {k.status}
                   </span>
-                  {k.status === 'cooldown' && k.cooldownUntil && (
+                  {k.status === "cooldown" && k.cooldownUntil && (
                     <span className="ml-2 text-xs text-muted-foreground">
                       {Math.max(0, Math.ceil((k.cooldownUntil - Date.now()) / 1000))}s
                     </span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">{k.usage ?? 0}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-destructive">{k.errors ?? 0}</td>
+                <td className="px-4 py-3 text-right tabular-nums text-destructive">
+                  {k.errors ?? 0}
+                </td>
                 <td className="px-4 py-3 text-right">
                   <button
                     onClick={() => handleRemove(k.tail)}
@@ -120,5 +124,5 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
         </table>
       </div>
     </div>
-  )
+  );
 }

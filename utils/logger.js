@@ -13,7 +13,9 @@ const LOG_COLORS = {
 };
 
 let ioInstance = null;
-const setIo = (io) => { ioInstance = io; };
+const setIo = (io) => {
+  ioInstance = io;
+};
 
 const log = (type, message, data = null) => {
   const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
@@ -33,7 +35,7 @@ const log = (type, message, data = null) => {
       type,
       message,
       timestamp,
-      data
+      data,
     };
     ioInstance.emit("log", entry);
   } else {

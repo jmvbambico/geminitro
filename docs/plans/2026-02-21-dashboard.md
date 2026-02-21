@@ -31,6 +31,7 @@
 ## Task 1: Scaffold Vite + React project
 
 **Files:**
+
 - Create: `dashboard/` (directory)
 - Create: `dashboard/package.json`
 - Create: `dashboard/vite.config.ts`
@@ -62,29 +63,29 @@ npm install tailwindcss@next @tailwindcss/vite@next
 **Step 4: Update `dashboard/vite.config.ts`**
 
 ```typescript
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
-import path from 'path'
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import path from "path";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: { '@': path.resolve(__dirname, './src') },
+    alias: { "@": path.resolve(__dirname, "./src") },
   },
   build: {
-    outDir: '../public',
+    outDir: "../public",
     emptyOutDir: true,
   },
   server: {
     proxy: {
-      '/api': 'http://localhost:7536',
-      '/v1': 'http://localhost:7536',
-      '/socket.io': { target: 'http://localhost:7536', ws: true },
+      "/api": "http://localhost:7536",
+      "/v1": "http://localhost:7536",
+      "/socket.io": { target: "http://localhost:7536", ws: true },
     },
   },
-  base: '/dashboard/',
-})
+  base: "/dashboard/",
+});
 ```
 
 Note: `base: '/dashboard/'` ensures all asset URLs are relative to `/dashboard/` when served by Express.
@@ -102,6 +103,7 @@ Expected: Vite dev server starts on :5173, React default page loads at http://lo
 ## Task 2: OKLCH Theme CSS
 
 **Files:**
+
 - Create: `dashboard/src/index.css`
 
 **Step 1: Replace `dashboard/src/index.css` with the full theme**
@@ -210,7 +212,9 @@ Expected: Vite dev server starts on :5173, React default page loads at http://lo
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-* { border-color: var(--border); }
+* {
+  border-color: var(--border);
+}
 body {
   background-color: var(--background);
   color: var(--foreground);
@@ -222,7 +226,7 @@ body {
 **Step 2: Import in `dashboard/src/main.tsx`**
 
 ```tsx
-import './index.css'
+import "./index.css";
 ```
 
 ---
@@ -230,6 +234,7 @@ import './index.css'
 ## Task 3: Shared utilities + shadcn-compatible cn() helper
 
 **Files:**
+
 - Create: `dashboard/src/lib/utils.ts`
 - Create: `dashboard/src/lib/api.ts`
 - Create: `dashboard/src/hooks/useSocket.ts`
@@ -239,11 +244,11 @@ import './index.css'
 **Step 1: `lib/utils.ts`**
 
 ```typescript
-import { clsx, type ClassValue } from 'clsx'
-import { twMerge } from 'tailwind-merge'
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 ```
 
@@ -252,57 +257,68 @@ export function cn(...inputs: ClassValue[]) {
 The dashboard reads the proxy API key from `localStorage` (key: `geminitro_api_key`, default: `"geminitro"`).
 
 ```typescript
-const getApiKey = () => localStorage.getItem('geminitro_api_key') ?? 'geminitro'
-const BASE = ''  // same origin — Express serves both API and dashboard
+const getApiKey = () => localStorage.getItem("geminitro_api_key") ?? "geminitro";
+const BASE = ""; // same origin — Express serves both API and dashboard
 
 export const api = {
   get: (path: string) =>
-    fetch(path, { headers: { Authorization: `Bearer ${getApiKey()}` } }).then(r => r.json()),
+    fetch(path, { headers: { Authorization: `Bearer ${getApiKey()}` } }).then((r) => r.json()),
 
   post: (path: string, body: unknown) =>
     fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getApiKey()}` },
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getApiKey()}` },
       body: JSON.stringify(body),
-    }).then(r => r.json()),
+    }).then((r) => r.json()),
 
   delete: (path: string) =>
-    fetch(path, { method: 'DELETE', headers: { Authorization: `Bearer ${getApiKey()}` } }).then(r => r.json()),
-}
+    fetch(path, { method: "DELETE", headers: { Authorization: `Bearer ${getApiKey()}` } }).then(
+      (r) => r.json(),
+    ),
+};
 ```
 
 **Step 3: `hooks/useSocket.ts`**
 
 ```typescript
-import { useEffect, useRef, useState } from 'react'
-import { io, Socket } from 'socket.io-client'
+import { useEffect, useRef, useState } from "react";
+import { io, Socket } from "socket.io-client";
 
-export type LogEntry = { id: string; type: string; message: string; timestamp: string }
-export type KeyEntry = { tail: string; status: string; usage: number; errors: number; lastUsed: number | null; cooldownUntil: number | null }
+export type LogEntry = { id: string; type: string; message: string; timestamp: string };
+export type KeyEntry = {
+  tail: string;
+  status: string;
+  usage: number;
+  errors: number;
+  lastUsed: number | null;
+  cooldownUntil: number | null;
+};
 
 export function useSocket() {
-  const socketRef = useRef<Socket | null>(null)
-  const [keys, setKeys] = useState<KeyEntry[]>([])
-  const [logs, setLogs] = useState<LogEntry[]>([])
-  const [trafficTick, setTrafficTick] = useState(0)
-  const [connected, setConnected] = useState(false)
+  const socketRef = useRef<Socket | null>(null);
+  const [keys, setKeys] = useState<KeyEntry[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [trafficTick, setTrafficTick] = useState(0);
+  const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     // Connect to same origin (Express), not Vite dev server
-    const origin = import.meta.env.DEV ? 'http://localhost:7536' : window.location.origin
-    const socket = io(origin, { path: '/socket.io' })
-    socketRef.current = socket
+    const origin = import.meta.env.DEV ? "http://localhost:7536" : window.location.origin;
+    const socket = io(origin, { path: "/socket.io" });
+    socketRef.current = socket;
 
-    socket.on('connect', () => setConnected(true))
-    socket.on('disconnect', () => setConnected(false))
-    socket.on('stats_update', (pool: KeyEntry[]) => setKeys(pool))
-    socket.on('traffic_update', () => setTrafficTick(t => t + 1))
-    socket.on('log', (entry: LogEntry) => setLogs(prev => [entry, ...prev].slice(0, 500)))
+    socket.on("connect", () => setConnected(true));
+    socket.on("disconnect", () => setConnected(false));
+    socket.on("stats_update", (pool: KeyEntry[]) => setKeys(pool));
+    socket.on("traffic_update", () => setTrafficTick((t) => t + 1));
+    socket.on("log", (entry: LogEntry) => setLogs((prev) => [entry, ...prev].slice(0, 500)));
 
-    return () => { socket.disconnect() }
-  }, [])
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
 
-  return { keys, logs, trafficTick, connected }
+  return { keys, logs, trafficTick, connected };
 }
 ```
 
@@ -311,60 +327,63 @@ export function useSocket() {
 Polls `/api/health` every 5 seconds (no auth required).
 
 ```typescript
-import { useEffect, useState } from 'react'
+import { useEffect, useState } from "react";
 
 export type HealthData = {
-  status: string
-  uptime: number
-  version: string
-  models: number
+  status: string;
+  uptime: number;
+  version: string;
+  models: number;
   keys: {
-    total: number
-    active: number
-    cooldown: number
-    minCooldown: number
-    cooldownKeys: { tail: string; remaining: number }[]
-  }
-}
+    total: number;
+    active: number;
+    cooldown: number;
+    minCooldown: number;
+    cooldownKeys: { tail: string; remaining: number }[];
+  };
+};
 
 export function useHealth() {
-  const [health, setHealth] = useState<HealthData | null>(null)
-  const [error, setError] = useState(false)
+  const [health, setHealth] = useState<HealthData | null>(null);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     const fetchHealth = () =>
-      fetch('/api/health')
-        .then(r => r.json())
-        .then(d => { setHealth(d); setError(false) })
-        .catch(() => setError(true))
+      fetch("/api/health")
+        .then((r) => r.json())
+        .then((d) => {
+          setHealth(d);
+          setError(false);
+        })
+        .catch(() => setError(true));
 
-    fetchHealth()
-    const interval = setInterval(fetchHealth, 5000)
-    return () => clearInterval(interval)
-  }, [])
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
-  return { health, error }
+  return { health, error };
 }
 ```
 
 **Step 5: `hooks/useDarkMode.ts`**
 
 ```typescript
-import { useEffect, useState } from 'react'
+import { useEffect, useState } from "react";
 
 export function useDarkMode() {
   const [dark, setDark] = useState(() => {
-    const stored = localStorage.getItem('geminitro_dark')
-    if (stored !== null) return stored === 'true'
-    return window.matchMedia('(prefers-color-scheme: dark)').matches
-  })
+    const stored = localStorage.getItem("geminitro_dark");
+    if (stored !== null) return stored === "true";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark)
-    localStorage.setItem('geminitro_dark', String(dark))
-  }, [dark])
+    document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem("geminitro_dark", String(dark));
+  }, [dark]);
 
-  return { dark, toggle: () => setDark(d => !d) }
+  return { dark, toggle: () => setDark((d) => !d) };
 }
 ```
 
@@ -373,6 +392,7 @@ export function useDarkMode() {
 ## Task 4: Layout shell
 
 **Files:**
+
 - Create: `dashboard/src/components/Layout.tsx`
 - Create: `dashboard/src/components/ui/` (shadcn-compatible primitives as needed)
 
@@ -381,33 +401,52 @@ export function useDarkMode() {
 Sidebar nav with icons (lucide-react), connection indicator, dark mode toggle.
 
 ```tsx
-import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, Key, BarChart2, ScrollText, Settings, Sun, Moon, Wifi, WifiOff } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { useDarkMode } from '@/hooks/useDarkMode'
+import { NavLink, Outlet } from "react-router-dom";
+import {
+  LayoutDashboard,
+  Key,
+  BarChart2,
+  ScrollText,
+  Settings,
+  Sun,
+  Moon,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useDarkMode } from "@/hooks/useDarkMode";
 
 const navItems = [
-  { to: '/overview', icon: LayoutDashboard, label: 'Overview' },
-  { to: '/keys', icon: Key, label: 'Keys' },
-  { to: '/stats', icon: BarChart2, label: 'Stats' },
-  { to: '/logs', icon: ScrollText, label: 'Logs' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
-]
+  { to: "/overview", icon: LayoutDashboard, label: "Overview" },
+  { to: "/keys", icon: Key, label: "Keys" },
+  { to: "/stats", icon: BarChart2, label: "Stats" },
+  { to: "/logs", icon: ScrollText, label: "Logs" },
+  { to: "/settings", icon: Settings, label: "Settings" },
+];
 
 export function Layout({ connected }: { connected: boolean }) {
-  const { dark, toggle } = useDarkMode()
+  const { dark, toggle } = useDarkMode();
 
   return (
     <div className="flex h-screen bg-background text-foreground">
       {/* Sidebar */}
       <aside className="w-56 flex flex-col border-r border-border bg-sidebar">
         <div className="px-4 py-5 border-b border-sidebar-border">
-          <span className="font-bold text-lg tracking-tight text-sidebar-foreground">GemiNitro</span>
+          <span className="font-bold text-lg tracking-tight text-sidebar-foreground">
+            GemiNitro
+          </span>
           <div className="flex items-center gap-1.5 mt-1">
-            {connected
-              ? <><Wifi className="w-3 h-3 text-green-500" /><span className="text-xs text-muted-foreground">Live</span></>
-              : <><WifiOff className="w-3 h-3 text-red-500" /><span className="text-xs text-muted-foreground">Disconnected</span></>
-            }
+            {connected ? (
+              <>
+                <Wifi className="w-3 h-3 text-green-500" />
+                <span className="text-xs text-muted-foreground">Live</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3 h-3 text-red-500" />
+                <span className="text-xs text-muted-foreground">Disconnected</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -416,12 +455,14 @@ export function Layout({ connected }: { connected: boolean }) {
             <NavLink
               key={to}
               to={to}
-              className={({ isActive }) => cn(
-                'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
-                isActive
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent/60'
-              )}
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                  isActive
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent/60",
+                )
+              }
             >
               <Icon className="w-4 h-4" />
               {label}
@@ -435,7 +476,7 @@ export function Layout({ connected }: { connected: boolean }) {
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            {dark ? 'Light mode' : 'Dark mode'}
+            {dark ? "Light mode" : "Dark mode"}
           </button>
         </div>
       </aside>
@@ -445,7 +486,7 @@ export function Layout({ connected }: { connected: boolean }) {
         <Outlet />
       </main>
     </div>
-  )
+  );
 }
 ```
 
@@ -460,21 +501,22 @@ cd dashboard && npm install react-router-dom
 ## Task 5: App.tsx routing
 
 **Files:**
+
 - Modify: `dashboard/src/App.tsx`
 
 ```tsx
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { Layout } from '@/components/Layout'
-import { Overview } from '@/pages/Overview'
-import { Keys } from '@/pages/Keys'
-import { Stats } from '@/pages/Stats'
-import { Logs } from '@/pages/Logs'
-import { Settings } from '@/pages/SettingsPage'
-import { Setup } from '@/pages/Setup'
-import { useSocket } from '@/hooks/useSocket'
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Layout } from "@/components/Layout";
+import { Overview } from "@/pages/Overview";
+import { Keys } from "@/pages/Keys";
+import { Stats } from "@/pages/Stats";
+import { Logs } from "@/pages/Logs";
+import { Settings } from "@/pages/SettingsPage";
+import { Setup } from "@/pages/Setup";
+import { useSocket } from "@/hooks/useSocket";
 
 export default function App() {
-  const { keys, logs, trafficTick, connected } = useSocket()
+  const { keys, logs, trafficTick, connected } = useSocket();
 
   return (
     <BrowserRouter basename="/dashboard">
@@ -493,7 +535,7 @@ export default function App() {
         </Route>
       </Routes>
     </BrowserRouter>
-  )
+  );
 }
 ```
 
@@ -502,37 +544,50 @@ export default function App() {
 ## Task 6: Overview page
 
 **Files:**
+
 - Create: `dashboard/src/pages/Overview.tsx`
 
 Stat cards: uptime, total keys (active/cooldown), model count, traffic ticker.
 Uses `useHealth` for server data + `trafficTick` prop for live traffic pulse.
 
 ```tsx
-import { useHealth } from '@/hooks/useHealth'
-import { KeyEntry } from '@/hooks/useSocket'
-import { Server, Key, Zap, Clock } from 'lucide-react'
+import { useHealth } from "@/hooks/useHealth";
+import { KeyEntry } from "@/hooks/useSocket";
+import { Server, Key, Zap, Clock } from "lucide-react";
 
-function StatCard({ icon: Icon, label, value, sub }: { icon: any; label: string; value: string | number; sub?: string }) {
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: any;
+  label: string;
+  value: string | number;
+  sub?: string;
+}) {
   return (
     <div className="rounded-xl border border-border bg-card p-5">
       <div className="flex items-center gap-3 mb-3">
-        <div className="p-2 rounded-lg bg-muted"><Icon className="w-4 h-4 text-muted-foreground" /></div>
+        <div className="p-2 rounded-lg bg-muted">
+          <Icon className="w-4 h-4 text-muted-foreground" />
+        </div>
         <span className="text-sm text-muted-foreground">{label}</span>
       </div>
       <div className="text-2xl font-bold">{value}</div>
       {sub && <div className="text-xs text-muted-foreground mt-1">{sub}</div>}
     </div>
-  )
+  );
 }
 
 export function Overview({ keys, trafficTick }: { keys: KeyEntry[]; trafficTick: number }) {
-  const { health, error } = useHealth()
+  const { health, error } = useHealth();
 
   const formatUptime = (s: number) => {
-    if (s < 60) return `${s}s`
-    if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`
-    return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
-  }
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+    return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  };
 
   if (error) {
     return (
@@ -540,14 +595,16 @@ export function Overview({ keys, trafficTick }: { keys: KeyEntry[]; trafficTick:
         <div className="text-center">
           <div className="text-4xl mb-3">⚡</div>
           <p className="text-muted-foreground">GemiNitro server is not reachable</p>
-          <p className="text-sm text-muted-foreground mt-1">Start it with: <code className="bg-muted px-1 rounded">geminitro start</code></p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Start it with: <code className="bg-muted px-1 rounded">geminitro start</code>
+          </p>
         </div>
       </div>
-    )
+    );
   }
 
-  const activeKeys = keys.filter(k => k.status === 'active' || k.status === 'idle').length
-  const coolingKeys = keys.filter(k => k.status === 'cooldown').length
+  const activeKeys = keys.filter((k) => k.status === "active" || k.status === "idle").length;
+  const coolingKeys = keys.filter((k) => k.status === "cooldown").length;
 
   return (
     <div className="p-6">
@@ -556,34 +613,24 @@ export function Overview({ keys, trafficTick }: { keys: KeyEntry[]; trafficTick:
         <StatCard
           icon={Server}
           label="Uptime"
-          value={health ? formatUptime(health.uptime) : '—'}
-          sub={`v${health?.version ?? '...'}`}
+          value={health ? formatUptime(health.uptime) : "—"}
+          sub={`v${health?.version ?? "..."}`}
         />
         <StatCard
           icon={Key}
           label="Keys"
-          value={health ? `${activeKeys} / ${health.keys.total}` : '—'}
-          sub={coolingKeys > 0 ? `${coolingKeys} cooling down` : 'All active'}
+          value={health ? `${activeKeys} / ${health.keys.total}` : "—"}
+          sub={coolingKeys > 0 ? `${coolingKeys} cooling down` : "All active"}
         />
-        <StatCard
-          icon={Zap}
-          label="Models"
-          value={health?.models ?? '—'}
-          sub="Available"
-        />
-        <StatCard
-          icon={Clock}
-          label="Traffic"
-          value={trafficTick}
-          sub="Requests this session"
-        />
+        <StatCard icon={Zap} label="Models" value={health?.models ?? "—"} sub="Available" />
+        <StatCard icon={Clock} label="Traffic" value={trafficTick} sub="Requests this session" />
       </div>
 
       {health && health.keys.cooldown > 0 && (
         <div className="mt-6 rounded-xl border border-border bg-card p-4">
           <h2 className="text-sm font-medium mb-3 text-muted-foreground">Keys on cooldown</h2>
           <div className="space-y-2">
-            {health.keys.cooldownKeys.map(k => (
+            {health.keys.cooldownKeys.map((k) => (
               <div key={k.tail} className="flex justify-between items-center text-sm">
                 <span className="font-mono text-muted-foreground">...{k.tail}</span>
                 <span className="text-yellow-500">{k.remaining}s remaining</span>
@@ -593,7 +640,7 @@ export function Overview({ keys, trafficTick }: { keys: KeyEntry[]; trafficTick:
         </div>
       )}
     </div>
-  )
+  );
 }
 ```
 
@@ -602,55 +649,56 @@ export function Overview({ keys, trafficTick }: { keys: KeyEntry[]; trafficTick:
 ## Task 7: Keys page
 
 **Files:**
+
 - Create: `dashboard/src/pages/Keys.tsx`
 
 Full key pool table with: masked key (last 6), status badge, usage count, error count, cooldown countdown. Add/remove via API.
 
 ```tsx
-import { useState } from 'react'
-import { api } from '@/lib/api'
-import { KeyEntry } from '@/hooks/useSocket'
-import { Trash2, Plus, RefreshCw } from 'lucide-react'
+import { useState } from "react";
+import { api } from "@/lib/api";
+import { KeyEntry } from "@/hooks/useSocket";
+import { Trash2, Plus, RefreshCw } from "lucide-react";
 
 const statusColors: Record<string, string> = {
-  active: 'text-green-500 bg-green-500/10',
-  idle: 'text-blue-500 bg-blue-500/10',
-  cooldown: 'text-yellow-500 bg-yellow-500/10',
-}
+  active: "text-green-500 bg-green-500/10",
+  idle: "text-blue-500 bg-blue-500/10",
+  cooldown: "text-yellow-500 bg-yellow-500/10",
+};
 
 export function Keys({ keys }: { keys: KeyEntry[] }) {
-  const [newKey, setNewKey] = useState('')
-  const [adding, setAdding] = useState(false)
-  const [addError, setAddError] = useState('')
-  const [addSuccess, setAddSuccess] = useState('')
-  const [removing, setRemoving] = useState<string | null>(null)
+  const [newKey, setNewKey] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState("");
+  const [addSuccess, setAddSuccess] = useState("");
+  const [removing, setRemoving] = useState<string | null>(null);
 
   const handleAdd = async () => {
-    if (!newKey.trim()) return
-    setAdding(true)
-    setAddError('')
-    setAddSuccess('')
+    if (!newKey.trim()) return;
+    setAdding(true);
+    setAddError("");
+    setAddSuccess("");
     try {
-      const res = await api.post('/api/keys', { key: newKey.trim() })
+      const res = await api.post("/api/keys", { key: newKey.trim() });
       if (res.error) {
-        setAddError(res.error)
+        setAddError(res.error);
       } else {
-        setAddSuccess(`Key added. ${res.models?.length ?? 0} models available.`)
-        setNewKey('')
+        setAddSuccess(`Key added. ${res.models?.length ?? 0} models available.`);
+        setNewKey("");
       }
     } catch {
-      setAddError('Request failed — is the server running?')
+      setAddError("Request failed — is the server running?");
     }
-    setAdding(false)
-  }
+    setAdding(false);
+  };
 
   const handleRemove = async (tail: string) => {
-    setRemoving(tail)
+    setRemoving(tail);
     try {
-      await api.delete(`/api/keys/${tail}`)
+      await api.delete(`/api/keys/${tail}`);
     } catch {}
-    setRemoving(null)
-  }
+    setRemoving(null);
+  };
 
   return (
     <div className="p-6">
@@ -664,8 +712,8 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
             type="password"
             placeholder="AIzaSy..."
             value={newKey}
-            onChange={e => setNewKey(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            onChange={(e) => setNewKey(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
           <button
@@ -674,7 +722,7 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
           >
             {adding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-            {adding ? 'Validating...' : 'Add'}
+            {adding ? "Validating..." : "Add"}
           </button>
         </div>
         {addError && <p className="text-sm text-destructive mt-2">{addError}</p>}
@@ -701,21 +749,25 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
                 </td>
               </tr>
             )}
-            {keys.map(k => (
+            {keys.map((k) => (
               <tr key={k.tail} className="border-b border-border last:border-0">
                 <td className="px-4 py-3 font-mono">...{k.tail}</td>
                 <td className="px-4 py-3">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[k.status] ?? 'text-muted-foreground bg-muted'}`}>
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[k.status] ?? "text-muted-foreground bg-muted"}`}
+                  >
                     {k.status}
                   </span>
-                  {k.status === 'cooldown' && k.cooldownUntil && (
+                  {k.status === "cooldown" && k.cooldownUntil && (
                     <span className="ml-2 text-xs text-muted-foreground">
                       {Math.max(0, Math.ceil((k.cooldownUntil - Date.now()) / 1000))}s
                     </span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">{k.usage ?? 0}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-destructive">{k.errors ?? 0}</td>
+                <td className="px-4 py-3 text-right tabular-nums text-destructive">
+                  {k.errors ?? 0}
+                </td>
                 <td className="px-4 py-3 text-right">
                   <button
                     onClick={() => handleRemove(k.tail)}
@@ -731,7 +783,7 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
         </table>
       </div>
     </div>
-  )
+  );
 }
 ```
 
@@ -740,37 +792,41 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
 ## Task 8: Stats page
 
 **Files:**
+
 - Create: `dashboard/src/pages/Stats.tsx`
 
 7-day request bar chart + model usage breakdown. Fetches from `/api/stats`.
 
 ```tsx
-import { useEffect, useState } from 'react'
-import { api } from '@/lib/api'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
 export function Stats() {
-  const [stats, setStats] = useState<any>(null)
+  const [stats, setStats] = useState<any>(null);
 
   useEffect(() => {
-    api.get('/api/stats').then(setStats).catch(() => {})
-  }, [])
+    api
+      .get("/api/stats")
+      .then(setStats)
+      .catch(() => {});
+  }, []);
 
-  if (!stats) return <div className="p-6 text-muted-foreground">Loading stats...</div>
+  if (!stats) return <div className="p-6 text-muted-foreground">Loading stats...</div>;
 
   const days = Object.entries(stats.daily ?? {})
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(-7)
     .map(([date, data]: [string, any]) => ({
-      date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      date: new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       requests: data.requests ?? 0,
       success: data.success ?? 0,
       errors: data.errors ?? 0,
-    }))
+    }));
 
   const modelEntries = Object.entries(stats.models ?? {})
     .sort(([, a]: any, [, b]: any) => b - a)
-    .slice(0, 10) as [string, number][]
+    .slice(0, 10) as [string, number][];
 
   return (
     <div className="p-6 space-y-6">
@@ -791,22 +847,21 @@ export function Stats() {
 
       <div className="rounded-xl border border-border bg-card p-4">
         <h2 className="text-sm font-medium text-muted-foreground mb-4">Model Usage</h2>
-        {modelEntries.length === 0
-          ? <p className="text-sm text-muted-foreground">No model usage recorded yet.</p>
-          : (
-            <div className="space-y-2">
-              {modelEntries.map(([model, count]) => (
-                <div key={model} className="flex justify-between text-sm">
-                  <span className="font-mono text-muted-foreground truncate max-w-xs">{model}</span>
-                  <span className="tabular-nums font-medium">{count}</span>
-                </div>
-              ))}
-            </div>
-          )
-        }
+        {modelEntries.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No model usage recorded yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {modelEntries.map(([model, count]) => (
+              <div key={model} className="flex justify-between text-sm">
+                <span className="font-mono text-muted-foreground truncate max-w-xs">{model}</span>
+                <span className="tabular-nums font-medium">{count}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
-  )
+  );
 }
 ```
 
@@ -815,42 +870,45 @@ export function Stats() {
 ## Task 9: Logs page
 
 **Files:**
+
 - Create: `dashboard/src/pages/Logs.tsx`
 
 Live log stream with type filter. Receives logs via Socket.IO `log` event.
 
 ```tsx
-import { useState } from 'react'
-import { LogEntry } from '@/hooks/useSocket'
-import { cn } from '@/lib/utils'
+import { useState } from "react";
+import { LogEntry } from "@/hooks/useSocket";
+import { cn } from "@/lib/utils";
 
 const LOG_COLORS: Record<string, string> = {
-  HTTP: 'text-blue-400',
-  KEY: 'text-yellow-400',
-  PROXY: 'text-green-400',
-  MODEL: 'text-purple-400',
-  INFO: 'text-muted-foreground',
-  WARN: 'text-orange-400',
-  ERROR: 'text-red-400',
-}
+  HTTP: "text-blue-400",
+  KEY: "text-yellow-400",
+  PROXY: "text-green-400",
+  MODEL: "text-purple-400",
+  INFO: "text-muted-foreground",
+  WARN: "text-orange-400",
+  ERROR: "text-red-400",
+};
 
 export function Logs({ logs }: { logs: LogEntry[] }) {
-  const [filter, setFilter] = useState<string>('ALL')
-  const types = ['ALL', 'HTTP', 'PROXY', 'KEY', 'MODEL', 'INFO', 'WARN', 'ERROR']
-  const filtered = filter === 'ALL' ? logs : logs.filter(l => l.type === filter)
+  const [filter, setFilter] = useState<string>("ALL");
+  const types = ["ALL", "HTTP", "PROXY", "KEY", "MODEL", "INFO", "WARN", "ERROR"];
+  const filtered = filter === "ALL" ? logs : logs.filter((l) => l.type === filter);
 
   return (
     <div className="flex flex-col h-full p-6">
       <div className="flex items-center gap-3 mb-4">
         <h1 className="text-xl font-semibold">Logs</h1>
         <div className="flex gap-1.5">
-          {types.map(t => (
+          {types.map((t) => (
             <button
               key={t}
               onClick={() => setFilter(t)}
               className={cn(
-                'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
-                filter === t ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'
+                "px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
+                filter === t
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground",
               )}
             >
               {t}
@@ -863,16 +921,22 @@ export function Logs({ logs }: { logs: LogEntry[] }) {
         {filtered.length === 0 && (
           <p className="text-muted-foreground">No logs yet — waiting for events...</p>
         )}
-        {filtered.map(l => (
+        {filtered.map((l) => (
           <div key={l.id} className="flex gap-3">
-            <span className="text-muted-foreground shrink-0">{new Date(l.timestamp).toLocaleTimeString()}</span>
-            <span className={cn('shrink-0 font-bold', LOG_COLORS[l.type] ?? 'text-muted-foreground')}>[{l.type}]</span>
+            <span className="text-muted-foreground shrink-0">
+              {new Date(l.timestamp).toLocaleTimeString()}
+            </span>
+            <span
+              className={cn("shrink-0 font-bold", LOG_COLORS[l.type] ?? "text-muted-foreground")}
+            >
+              [{l.type}]
+            </span>
             <span className="text-foreground break-all">{l.message}</span>
           </div>
         ))}
       </div>
     </div>
-  )
+  );
 }
 ```
 
@@ -881,24 +945,27 @@ export function Logs({ logs }: { logs: LogEntry[] }) {
 ## Task 10: Settings page
 
 **Files:**
+
 - Create: `dashboard/src/pages/SettingsPage.tsx`
 
 Read-only config display from `/api/health`. Also shows the API key input for updating `localStorage`.
 
 ```tsx
-import { useHealth } from '@/hooks/useHealth'
-import { useState } from 'react'
+import { useHealth } from "@/hooks/useHealth";
+import { useState } from "react";
 
 export function Settings() {
-  const { health } = useHealth()
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('geminitro_api_key') ?? 'geminitro')
-  const [saved, setSaved] = useState(false)
+  const { health } = useHealth();
+  const [apiKey, setApiKey] = useState(
+    () => localStorage.getItem("geminitro_api_key") ?? "geminitro",
+  );
+  const [saved, setSaved] = useState(false);
 
   const saveKey = () => {
-    localStorage.setItem('geminitro_api_key', apiKey)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }
+    localStorage.setItem("geminitro_api_key", apiKey);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
 
   return (
     <div className="p-6 space-y-6 max-w-lg">
@@ -913,43 +980,42 @@ export function Settings() {
           <input
             type="password"
             value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
+            onChange={(e) => setApiKey(e.target.value)}
             className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
           <button
             onClick={saveKey}
             className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium"
           >
-            {saved ? 'Saved ✓' : 'Save'}
+            {saved ? "Saved ✓" : "Save"}
           </button>
         </div>
       </div>
 
       <div className="rounded-xl border border-border bg-card p-4 space-y-2">
         <h2 className="text-sm font-medium mb-3">Server Info</h2>
-        {health
-          ? (
-            <dl className="space-y-2 text-sm">
-              {[
-                ['Status', health.status],
-                ['Version', `v${health.version}`],
-                ['Port', '7536'],
-                ['Uptime', `${health.uptime}s`],
-                ['Models', health.models],
-                ['Total keys', health.keys.total],
-              ].map(([k, v]) => (
-                <div key={String(k)} className="flex justify-between">
-                  <dt className="text-muted-foreground">{k}</dt>
-                  <dd className="font-mono">{v}</dd>
-                </div>
-              ))}
-            </dl>
-          )
-          : <p className="text-sm text-muted-foreground">Server not reachable</p>
-        }
+        {health ? (
+          <dl className="space-y-2 text-sm">
+            {[
+              ["Status", health.status],
+              ["Version", `v${health.version}`],
+              ["Port", "7536"],
+              ["Uptime", `${health.uptime}s`],
+              ["Models", health.models],
+              ["Total keys", health.keys.total],
+            ].map(([k, v]) => (
+              <div key={String(k)} className="flex justify-between">
+                <dt className="text-muted-foreground">{k}</dt>
+                <dd className="font-mono">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="text-sm text-muted-foreground">Server not reachable</p>
+        )}
       </div>
     </div>
-  )
+  );
 }
 ```
 
@@ -958,41 +1024,42 @@ export function Settings() {
 ## Task 11: Setup / First-run wizard page
 
 **Files:**
+
 - Create: `dashboard/src/pages/Setup.tsx`
 
 Standalone page (no sidebar layout). Shown when server redirects to `/dashboard/setup`.
 
 ```tsx
-import { useState } from 'react'
-import { api } from '@/lib/api'
-import { CheckCircle2, RefreshCw } from 'lucide-react'
+import { useState } from "react";
+import { api } from "@/lib/api";
+import { CheckCircle2, RefreshCw } from "lucide-react";
 
-type Stage = 'idle' | 'validating' | 'success' | 'error'
+type Stage = "idle" | "validating" | "success" | "error";
 
 export function Setup() {
-  const [key, setKey] = useState('')
-  const [stage, setStage] = useState<Stage>('idle')
-  const [message, setMessage] = useState('')
-  const [models, setModels] = useState<string[]>([])
+  const [key, setKey] = useState("");
+  const [stage, setStage] = useState<Stage>("idle");
+  const [message, setMessage] = useState("");
+  const [models, setModels] = useState<string[]>([]);
 
   const handleAdd = async () => {
-    if (!key.trim()) return
-    setStage('validating')
-    setMessage('')
+    if (!key.trim()) return;
+    setStage("validating");
+    setMessage("");
     try {
-      const res = await api.post('/api/keys', { key: key.trim() })
+      const res = await api.post("/api/keys", { key: key.trim() });
       if (res.error) {
-        setStage('error')
-        setMessage(res.error)
+        setStage("error");
+        setMessage(res.error);
       } else {
-        setStage('success')
-        setModels(res.models ?? [])
+        setStage("success");
+        setModels(res.models ?? []);
       }
     } catch {
-      setStage('error')
-      setMessage('Could not reach server. Make sure geminitro is running.')
+      setStage("error");
+      setMessage("Could not reach server. Make sure geminitro is running.");
     }
-  }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-6">
@@ -1001,32 +1068,37 @@ export function Setup() {
           <h1 className="text-3xl font-bold mb-2">Welcome to GemiNitro</h1>
           <p className="text-muted-foreground">Add your first Gemini API key to get started.</p>
           <p className="text-sm text-muted-foreground mt-1">
-            Get a free key at{' '}
-            <a href="https://aistudio.google.com" target="_blank" rel="noreferrer" className="underline text-primary">
+            Get a free key at{" "}
+            <a
+              href="https://aistudio.google.com"
+              target="_blank"
+              rel="noreferrer"
+              className="underline text-primary"
+            >
               aistudio.google.com
             </a>
           </p>
         </div>
 
-        {stage !== 'success' ? (
+        {stage !== "success" ? (
           <div className="rounded-xl border border-border bg-card p-6 space-y-4">
             <label className="block text-sm font-medium">Gemini API Key</label>
             <input
               type="password"
               placeholder="AIzaSy..."
               value={key}
-              onChange={e => setKey(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              onChange={(e) => setKey(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
               className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
-            {stage === 'error' && <p className="text-sm text-destructive">{message}</p>}
+            {stage === "error" && <p className="text-sm text-destructive">{message}</p>}
             <button
               onClick={handleAdd}
-              disabled={stage === 'validating' || !key.trim()}
+              disabled={stage === "validating" || !key.trim()}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
             >
-              {stage === 'validating' && <RefreshCw className="w-4 h-4 animate-spin" />}
-              {stage === 'validating' ? 'Validating key...' : 'Add Key & Continue'}
+              {stage === "validating" && <RefreshCw className="w-4 h-4 animate-spin" />}
+              {stage === "validating" ? "Validating key..." : "Add Key & Continue"}
             </button>
           </div>
         ) : (
@@ -1044,7 +1116,7 @@ export function Setup() {
         )}
       </div>
     </div>
-  )
+  );
 }
 ```
 
@@ -1053,6 +1125,7 @@ export function Setup() {
 ## Task 12: Wire build output → Express static serving
 
 **Files:**
+
 - Modify: `server.js`
 
 **Step 1: Add static file serving for built dashboard**
@@ -1076,6 +1149,7 @@ if (require("fs").existsSync(dashboardPath)) {
 **Step 2: Verify**
 
 Build dashboard first (`cd dashboard && npm run build`), then:
+
 ```bash
 node server.js
 # curl http://localhost:7536/dashboard → should return HTML
@@ -1086,6 +1160,7 @@ node server.js
 ## Task 13: Rework `geminitro start` — smart first-run flow
 
 **Files:**
+
 - Create: `src/cli/firstRun.js`
 - Modify: `bin/geminitro.js` (start action)
 
@@ -1130,8 +1205,11 @@ const openBrowser = async (url) => {
     await open(url);
   } catch {
     const { execSync } = require("child_process");
-    const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-    try { execSync(`${cmd} "${url}"`, { stdio: "ignore" }); } catch {}
+    const cmd =
+      process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+    try {
+      execSync(`${cmd} "${url}"`, { stdio: "ignore" });
+    } catch {}
   }
 };
 
@@ -1185,7 +1263,7 @@ const run = async (options = {}) => {
       // Start server first so the dashboard is reachable
       startServer(options);
       // Give server 1s to boot before opening browser
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 1000));
       const setupUrl = `http://localhost:${config.PORT}/dashboard/setup`;
       console.log(chalk.cyan(`\n  Opening setup wizard: ${setupUrl}\n`));
       await openBrowser(setupUrl);
@@ -1207,7 +1285,7 @@ const run = async (options = {}) => {
   startServer(options);
 
   if (choice === "browser") {
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 1000));
     const dashUrl = `http://localhost:${config.PORT}/dashboard`;
     console.log(chalk.cyan(`\n  Opening dashboard: ${dashUrl}\n`));
     await openBrowser(dashUrl);
@@ -1242,7 +1320,8 @@ program
     if (options.interactive === false) {
       // Direct start — no prompts
       const config = require("../config");
-      if (options.splash !== false) require("../src/cli/splash").printSplash(require("../package.json").version, config.PORT);
+      if (options.splash !== false)
+        require("../src/cli/splash").printSplash(require("../package.json").version, config.PORT);
       require("../server");
     } else {
       await require("../src/cli/firstRun").run(options);
@@ -1255,6 +1334,7 @@ program
 ## Task 14: Add `open` package
 
 **Files:**
+
 - Modify: `package.json` (root)
 
 ```bash
@@ -1272,6 +1352,7 @@ npm install open@8
 ## Task 15: Add `npm run build` script to root package.json
 
 **Files:**
+
 - Modify: `package.json` (root)
 
 Add to `"scripts"`:
@@ -1325,6 +1406,7 @@ Open http://localhost:7536/dashboard — should see layout, sidebar, Overview pa
 ## Task 17: Update `.gitignore`
 
 **Files:**
+
 - Modify: `.gitignore`
 
 Add:
@@ -1340,9 +1422,11 @@ dashboard/dist/
 ## Task 18: Update AGENTS.md
 
 **Files:**
+
 - Modify: `AGENTS.md`
 
 Update the "Current State" checkboxes and Architecture section to reflect:
+
 - Dashboard is implemented
 - `geminitro start` has smart first-run flow
 - `public/` is the build output (not committed)

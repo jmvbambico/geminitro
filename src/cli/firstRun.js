@@ -18,8 +18,14 @@ const isProviderRegistered = () => {
 
   try {
     const yaml = require("js-yaml");
-    const doc = yaml.load(fs.readFileSync(path.join(os.homedir(), ".continue", "config.yaml"), "utf8"));
-    if (Array.isArray(doc?.models) && doc.models.some((m) => String(m.apiBase || "").includes(`localhost:${PORT}`))) return true;
+    const doc = yaml.load(
+      fs.readFileSync(path.join(os.homedir(), ".continue", "config.yaml"), "utf8"),
+    );
+    if (
+      Array.isArray(doc?.models) &&
+      doc.models.some((m) => String(m.apiBase || "").includes(`localhost:${PORT}`))
+    )
+      return true;
   } catch {}
 
   try {
@@ -30,8 +36,18 @@ const isProviderRegistered = () => {
 
   try {
     const TOML = require("@iarna/toml");
-    const doc = TOML.parse(fs.readFileSync(path.join(os.homedir(), ".codex", "config.toml"), "utf8"));
+    const doc = TOML.parse(
+      fs.readFileSync(path.join(os.homedir(), ".codex", "config.toml"), "utf8"),
+    );
     if (String(doc?.providers?.openai?.base_url || "").includes(`localhost:${PORT}`)) return true;
+  } catch {}
+
+  try {
+    const TOML = require("@iarna/toml");
+    const doc = TOML.parse(
+      fs.readFileSync(path.join(os.homedir(), ".opencrabs", "config.toml"), "utf8"),
+    );
+    if (String(doc?.providers?.custom?.base_url ?? "").includes(`localhost:${PORT}`)) return true;
   } catch {}
 
   return false;
@@ -54,8 +70,11 @@ const openBrowser = async (url) => {
     await open(url);
   } catch {
     const { execSync } = require("child_process");
-    const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-    try { execSync(`${cmd} "${url}"`, { stdio: "ignore" }); } catch {}
+    const cmd =
+      process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+    try {
+      execSync(`${cmd} "${url}"`, { stdio: "ignore" });
+    } catch {}
   }
 };
 
@@ -77,7 +96,9 @@ const run = async (options = {}) => {
   const hasApiKeys = hasKeys();
 
   if (!registered) {
-    console.log(chalk.yellow("\n  ⚠  GemiNitro is not yet registered to any known coding agents.\n"));
+    console.log(
+      chalk.yellow("\n  ⚠  GemiNitro is not yet registered to any known coding agents.\n"),
+    );
 
     const action = await select({
       message: "What would you like to do?",
@@ -95,6 +116,7 @@ const run = async (options = {}) => {
           { name: "Continue.dev  (VS Code / JetBrains)", value: "continue" },
           { name: "Aider  (CLI)", value: "aider" },
           { name: "Codex CLI  (OpenAI CLI)", value: "codex" },
+          { name: "OpenCrabs  (Rust TUI agent)", value: "opencrabs" },
         ],
       });
       await require("./install").run(agent);
@@ -121,7 +143,7 @@ const run = async (options = {}) => {
       startServer(options);
     } else if (method === "browser") {
       startServer(options);
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 1000));
       const setupUrl = `http://localhost:${config.PORT}/dashboard/setup`;
       console.log(chalk.cyan(`\n  Opening setup wizard: ${setupUrl}\n`));
       await openBrowser(setupUrl);
@@ -142,7 +164,7 @@ const run = async (options = {}) => {
   startServer(options);
 
   if (choice === "browser") {
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 1000));
     const dashUrl = `http://localhost:${config.PORT}/dashboard`;
     console.log(chalk.cyan(`\n  Opening dashboard: ${dashUrl}\n`));
     await openBrowser(dashUrl);
