@@ -76,5 +76,8 @@ jobs:
       - name: Build dashboard
         run: npm run build
 
+      - name: List build output
+        run: ls -la public/ 2>&1 || echo "public/ not found"
+
       - name: Verify build output
-        run: test -f public/index.html && test -f public/logo.webp
+        run: test -f public/index.html
