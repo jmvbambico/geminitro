@@ -50,6 +50,15 @@ const isProviderRegistered = () => {
     if (String(doc?.providers?.custom?.base_url ?? "").includes(`localhost:${PORT}`)) return true;
   } catch {}
 
+  try {
+    const TOML = require("@iarna/toml");
+    const doc = TOML.parse(
+      fs.readFileSync(path.join(os.homedir(), ".kimi", "config.toml"), "utf8"),
+    );
+    if (String(doc?.providers?.geminitro?.base_url ?? "").includes(`localhost:${PORT}`))
+      return true;
+  } catch {}
+
   return false;
 };
 
@@ -78,12 +87,7 @@ const openBrowser = async (url) => {
   }
 };
 
-const startServer = (options = {}) => {
-  if (options.splash !== false) {
-    const { version } = require("../../package.json");
-    const config = require("../../config");
-    require("./splash").printSplash(version, config.PORT);
-  }
+const startServer = () => {
   require("../../server");
 };
 
@@ -91,6 +95,11 @@ const run = async (options = {}) => {
   const chalk = require("chalk");
   const { select, input } = require("@inquirer/prompts");
   const config = require("../../config");
+  const { version } = require("../../package.json");
+
+  if (options.splash !== false) {
+    require("./splash").printSplash(version, config.PORT);
+  }
 
   const registered = isProviderRegistered();
   const hasApiKeys = hasKeys();
@@ -117,6 +126,7 @@ const run = async (options = {}) => {
           { name: "Aider  (CLI)", value: "aider" },
           { name: "Codex CLI  (OpenAI CLI)", value: "codex" },
           { name: "OpenCrabs  (Rust TUI agent)", value: "opencrabs" },
+          { name: "Kimi Code  (Moonshot AI CLI)", value: "kimi-code" },
         ],
       });
       await require("./install").run(agent);
@@ -140,15 +150,15 @@ const run = async (options = {}) => {
       if (apiKey?.trim()) {
         await require("./keys").add(apiKey.trim());
       }
-      startServer(options);
+      startServer();
     } else if (method === "browser") {
-      startServer(options);
+      startServer();
       await new Promise((r) => setTimeout(r, 1000));
       const setupUrl = `http://localhost:${config.PORT}/dashboard/setup`;
       console.log(chalk.cyan(`\n  Opening setup wizard: ${setupUrl}\n`));
       await openBrowser(setupUrl);
     } else {
-      startServer(options);
+      startServer();
     }
     return;
   }
@@ -161,7 +171,7 @@ const run = async (options = {}) => {
     ],
   });
 
-  startServer(options);
+  startServer();
 
   if (choice === "browser") {
     await new Promise((r) => setTimeout(r, 1000));

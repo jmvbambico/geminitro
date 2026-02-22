@@ -335,6 +335,40 @@ const installOpenCrabs = async (models, port, apiKey, chalk) => {
   );
 };
 
+const installKimiCode = async (models, port, apiKey, chalk) => {
+  const TOML = require("@iarna/toml");
+  const configPath = path.join(os.homedir(), ".kimi", "config.toml");
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+
+  let doc = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      doc = TOML.parse(fs.readFileSync(configPath, "utf8"));
+    } catch {}
+  }
+
+  doc.default_model = "geminitro";
+
+  if (!doc.providers) doc.providers = {};
+  doc.providers.geminitro = {
+    type: "openai_legacy",
+    base_url: `http://localhost:${port}/v1`,
+    api_key: apiKey,
+  };
+
+  if (!doc.models) doc.models = {};
+  doc.models.geminitro = {
+    provider: "geminitro",
+    model: models[0] ?? "gemini-2.0-flash",
+    max_context_size: 1048576,
+    capabilities: ["thinking", "image_in"],
+  };
+
+  fs.writeFileSync(configPath, TOML.stringify(doc));
+  console.log(chalk.green(`  ✓ Written to ${configPath}`));
+  console.log(chalk.gray("  Kimi Code will use GemiNitro via the 'geminitro' provider."));
+};
+
 const uninstallContinue = (port, chalk) => {
   const yaml = require("js-yaml");
   const configPath = path.join(os.homedir(), ".continue", "config.yaml");
@@ -416,6 +450,31 @@ const uninstallOpenCrabs = (port, chalk) => {
   if (removed) console.log(chalk.green(`  ✓ Removed GemiNitro from OpenCrabs config`));
 };
 
+const uninstallKimiCode = (port, chalk) => {
+  const TOML = require("@iarna/toml");
+  const configPath = path.join(os.homedir(), ".kimi", "config.toml");
+
+  if (!fs.existsSync(configPath)) return;
+
+  try {
+    const doc = TOML.parse(fs.readFileSync(configPath, "utf8"));
+    const url = doc?.providers?.geminitro?.base_url ?? "";
+    if (url.includes(`localhost:${port}`)) {
+      delete doc.providers.geminitro;
+      if (Object.keys(doc.providers).length === 0) delete doc.providers;
+      if (doc.default_model === "geminitro") {
+        delete doc.default_model;
+      }
+      if (doc.models?.geminitro) {
+        delete doc.models.geminitro;
+        if (Object.keys(doc.models).length === 0) delete doc.models;
+      }
+      fs.writeFileSync(configPath, TOML.stringify(doc));
+      console.log(chalk.green(`  ✓ Removed GemiNitro from Kimi Code config`));
+    }
+  } catch {}
+};
+
 const uninstallLaunchd = () => {
   const plistPath = path.join(os.homedir(), "Library", "LaunchAgents", "ai.geminitro.plist");
   const logDir = path.join(os.homedir(), ".config", "geminitro", "logs");
@@ -491,6 +550,14 @@ const hasAnyAgentInstalled = (port) => {
     );
     if (String(doc?.providers?.custom?.base_url ?? "").includes(`localhost:${port}`)) return true;
   } catch {}
+  try {
+    const TOML = require("@iarna/toml");
+    const doc = TOML.parse(
+      fs.readFileSync(path.join(os.homedir(), ".kimi", "config.toml"), "utf8"),
+    );
+    if (String(doc?.providers?.geminitro?.base_url ?? "").includes(`localhost:${port}`))
+      return true;
+  } catch {}
   return false;
 };
 
@@ -527,6 +594,7 @@ const run = async (agent = "opencode") => {
       aider: "Aider",
       codex: "Codex CLI",
       opencrabs: "OpenCrabs",
+      "kimi-code": "Kimi Code",
     }[agent] ?? agent;
   console.log(chalk.bold(`\n  Installing for ${agentLabel}...\n`));
 
@@ -535,6 +603,7 @@ const run = async (agent = "opencode") => {
   else if (agent === "aider") await installAider(models, PORT, PROXY_API_KEY, chalk);
   else if (agent === "codex") await installCodex(models, PORT, PROXY_API_KEY, chalk);
   else if (agent === "opencrabs") await installOpenCrabs(models, PORT, PROXY_API_KEY, chalk);
+  else if (agent === "kimi-code") await installKimiCode(models, PORT, PROXY_API_KEY, chalk);
 
   const autoStart = await select({
     message: "\n  Auto-start GemiNitro on login?",
@@ -632,6 +701,16 @@ const runUninstall = async () => {
         chalk.gray(`    • ${path.join(os.homedir(), ".opencrabs", "config.toml")}  (OpenCrabs)`),
       );
   } catch {}
+  try {
+    const TOML = require("@iarna/toml");
+    const doc = TOML.parse(
+      fs.readFileSync(path.join(os.homedir(), ".kimi", "config.toml"), "utf8"),
+    );
+    if (String(doc?.providers?.geminitro?.base_url ?? "").includes(`localhost:${PORT}`))
+      console.log(
+        chalk.gray(`    • ${path.join(os.homedir(), ".kimi", "config.toml")}  (Kimi Code)`),
+      );
+  } catch {}
 
   if (hasService) {
     if (fs.existsSync(plistPath)) console.log(chalk.gray("    • launchd service (macOS)"));
@@ -657,6 +736,7 @@ const runUninstall = async () => {
   uninstallAider(PORT, chalk);
   uninstallCodex(PORT, chalk);
   uninstallOpenCrabs(PORT, chalk);
+  uninstallKimiCode(PORT, chalk);
 
   if (fs.existsSync(plistPath)) console.log(chalk.green(`  ✓ ${uninstallLaunchd().msg}`));
   if (fs.existsSync(servicePath)) console.log(chalk.green(`  ✓ ${uninstallSystemd().msg}`));

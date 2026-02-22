@@ -1,5 +1,5 @@
 const path = require("path");
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 
 const DATA_DIR = process.env.GEMINITRO_DATA_DIR || path.join(__dirname, "..", ".geminitro");
 

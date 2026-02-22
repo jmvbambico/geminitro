@@ -85,6 +85,7 @@ Run `geminitro install` and select your agent. Supported agents:
 | **Aider**        | `~/.aider.conf.yml`                                     | Automatic — runs via GemiNitro by default |
 | **Codex CLI**    | `~/.codex/config.toml`                                  | Automatic — uses configured provider      |
 | **OpenCrabs**    | `~/.opencrabs/config.toml` + `keys.toml`                | Select custom provider                    |
+| **Kimi Code**    | `~/.kimi/config.toml`                                   | Uses `geminitro` provider                 |
 
 ### OpenCode
 
@@ -168,6 +169,25 @@ default_model = "gemini-2.0-flash"
 # keys.toml (chmod 600)
 [providers.custom]
 api_key = "geminitro"
+```
+
+### Kimi Code
+
+Written to `~/.kimi/config.toml`:
+
+```toml
+default_model = "geminitro"
+
+[providers.geminitro]
+type = "openai_legacy"
+base_url = "http://localhost:7536/v1"
+api_key = "geminitro"
+
+[models.geminitro]
+provider = "geminitro"
+model = "gemini-2.0-flash"
+max_context_size = 1048576
+capabilities = ["thinking", "image_in"]
 ```
 
 ---
