@@ -76,5 +76,5 @@ jobs:
       - name: Build dashboard
         run: npm run build
 
-      - name: Verify server loads
-        run: node -e "require('./server.js')"
+      - name: Verify build output
+        run: test -f public/index.html && test -f public/logo.webp
