@@ -87,7 +87,47 @@ const openBrowser = async (url) => {
   }
 };
 
-const startServer = () => {
+const killByPort = (port) => {
+  const { execSync } = require("child_process");
+  try {
+    const pids = execSync(`lsof -t -i :${port}`, { encoding: "utf8" })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+    for (const pid of pids) {
+      try {
+        process.kill(parseInt(pid), "SIGTERM");
+      } catch {}
+    }
+    return pids.length > 0;
+  } catch {
+    return false;
+  }
+};
+
+const waitForPort = async (port, maxMs = 3000) => {
+  const { execSync } = require("child_process");
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    try {
+      execSync(`lsof -i :${port}`, { stdio: "ignore" });
+      await new Promise((r) => setTimeout(r, 100));
+    } catch {
+      return true;
+    }
+  }
+  return false;
+};
+
+const startServer = async (port) => {
+  // Kill any existing process on the port
+  killByPort(port);
+  const freed = await waitForPort(port);
+  if (!freed) {
+    const chalk = require("chalk");
+    console.log(chalk.red(`\n  ✗ Could not free port :${port}\n`));
+    process.exit(1);
+  }
   require("../../server");
 };
 
@@ -150,19 +190,18 @@ const run = async (options = {}) => {
       if (apiKey?.trim()) {
         await require("./keys").add(apiKey.trim());
       }
-      startServer();
+      await startServer(config.PORT);
     } else if (method === "browser") {
-      startServer();
+      await startServer(config.PORT);
       await new Promise((r) => setTimeout(r, 1000));
       const setupUrl = `http://localhost:${config.PORT}/dashboard/setup`;
       console.log(chalk.cyan(`\n  Opening setup wizard: ${setupUrl}\n`));
       await openBrowser(setupUrl);
     } else {
-      startServer();
+      await startServer(config.PORT);
     }
     return;
   }
-
   const choice = await select({
     message: "GemiNitro is ready. How do you want to proceed?",
     choices: [
@@ -171,7 +210,7 @@ const run = async (options = {}) => {
     ],
   });
 
-  startServer();
+  await startServer(config.PORT);
 
   if (choice === "browser") {
     await new Promise((r) => setTimeout(r, 1000));

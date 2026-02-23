@@ -21,6 +21,47 @@ program
     if (options.port) process.env.PORT = options.port;
     if (options.interactive === false) {
       const config = require("../config");
+      const { execSync } = require("child_process");
+
+      // Kill any existing process on the port
+      const killByPort = (port) => {
+        try {
+          const pids = execSync(`lsof -t -i :${port}`, { encoding: "utf8" })
+            .trim()
+            .split("\n")
+            .filter(Boolean);
+          for (const pid of pids) {
+            try {
+              process.kill(parseInt(pid), "SIGTERM");
+            } catch {}
+          }
+          return pids.length > 0;
+        } catch {
+          return false;
+        }
+      };
+
+      const waitForPort = async (port, maxMs = 3000) => {
+        const start = Date.now();
+        while (Date.now() - start < maxMs) {
+          try {
+            execSync(`lsof -i :${port}`, { stdio: "ignore" });
+            await new Promise((r) => setTimeout(r, 100));
+          } catch {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      killByPort(config.PORT);
+      const freed = await waitForPort(config.PORT);
+      if (!freed) {
+        const chalk = require("chalk");
+        console.log(chalk.red(`\n  ✗ Could not free port :${config.PORT}\n`));
+        process.exit(1);
+      }
+
       if (options.splash !== false) require("../src/cli/splash").printSplash(version, config.PORT);
       require("../server");
     } else {
