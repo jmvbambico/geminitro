@@ -983,5 +983,6 @@ module.exports = {
   runUninstall,
   updateAgentConfig,
   detectAvailableAgents,
+  installOpenCode,
   FALLBACK_MODELS,
 };
