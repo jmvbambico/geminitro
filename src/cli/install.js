@@ -539,6 +539,47 @@ const hasAnyAgentInstalled = (port) => {
   return false;
 };
 
+const AGENT_CONFIGS = {
+  opencode: {
+    name: "OpenCode",
+    paths: [OPENCODE_GLOBAL_CONFIG, () => path.join(process.cwd(), "opencode.json")],
+  },
+  continue: {
+    name: "Continue.dev",
+    paths: [() => path.join(os.homedir(), ".continue", "config.yaml")],
+  },
+  aider: {
+    name: "Aider",
+    paths: [() => path.join(os.homedir(), ".aider.conf.yml")],
+  },
+  codex: {
+    name: "Codex CLI",
+    paths: [() => path.join(os.homedir(), ".codex", "config.toml")],
+  },
+  opencrabs: {
+    name: "OpenCrabs",
+    paths: [() => path.join(os.homedir(), ".opencrabs", "config.toml")],
+  },
+  "kimi-code": {
+    name: "Kimi Code",
+    paths: [() => path.join(os.homedir(), ".kimi", "config.toml")],
+  },
+};
+
+const detectAvailableAgents = () => {
+  const detected = [];
+  for (const [id, info] of Object.entries(AGENT_CONFIGS)) {
+    for (const p of info.paths) {
+      const resolved = typeof p === "function" ? p() : p;
+      if (fs.existsSync(resolved)) {
+        detected.push({ id, name: info.name });
+        break;
+      }
+    }
+  }
+  return detected;
+};
+
 const run = async (agent = "opencode") => {
   const chalk = require("chalk");
   const { select } = require("@inquirer/prompts");
@@ -611,7 +652,106 @@ const run = async (agent = "opencode") => {
   console.log(chalk.green(`  ✓ AUTO_UPDATE=${autoUpdate ? "true" : "false"} saved to .env`));
 
   console.log(chalk.bold(chalk.green(`\n  ✓ GemiNitro registered in ${agentLabel}\n`)));
-  console.log(chalk.cyan("  Next: add at least one key →  geminitro key add <YOUR_GEMINI_KEY>\n"));
+};
+
+const runInteractive = async () => {
+  const chalk = require("chalk");
+  const { select, checkbox } = require("@inquirer/prompts");
+  const { PORT, PROXY_API_KEY } = require("../../config");
+
+  console.log(chalk.bold("\n  GemiNitro — Coding Agent Integration Setup\n"));
+
+  // Detect available agents
+  const availableAgents = detectAvailableAgents();
+
+  if (availableAgents.length === 0) {
+    console.log(chalk.yellow("  No coding agents detected on this system."));
+    console.log(chalk.gray("  Install a coding agent first, then run `geminitro install`.\n"));
+    return;
+  }
+
+  console.log(chalk.gray(`  Detected ${availableAgents.length} coding agent(s):`));
+  for (const a of availableAgents) {
+    console.log(chalk.white(`    • ${a.name}`));
+  }
+  console.log();
+
+  // Get models
+  console.log(chalk.gray(`  Checking for running server on :${PORT}...`));
+  const liveModels = await fetchLiveModels(PORT, PROXY_API_KEY);
+  const cachedModels = readCachedModels();
+  const models = liveModels ?? cachedModels ?? FALLBACK_MODELS;
+
+  if (liveModels) {
+    console.log(chalk.green(`  ✓ Server detected — using ${models.length} live models`));
+  } else if (cachedModels) {
+    console.log(chalk.yellow(`  ⚠ Server not running — using ${models.length} cached models`));
+  } else {
+    console.log(chalk.yellow(`  ⚠ Server not running — using ${models.length} built-in models`));
+  }
+
+  // Multi-select for agents
+  const selectedAgents = await checkbox({
+    message: "Select which coding agents to configure:",
+    choices: availableAgents.map((a) => ({
+      name: a.name,
+      value: a.id,
+      checked: true,
+    })),
+  });
+
+  if (selectedAgents.length === 0) {
+    console.log(chalk.yellow("\n  No agents selected.\n"));
+    return;
+  }
+
+  // Install to each selected agent
+  for (const agentId of selectedAgents) {
+    const agentLabel = AGENT_CONFIGS[agentId]?.name ?? agentId;
+    console.log(chalk.bold(`\n  Installing for ${agentLabel}...\n`));
+
+    if (agentId === "opencode") await installOpenCode(models, PORT, PROXY_API_KEY, chalk, select);
+    else if (agentId === "continue") await installContinue(models, PORT, PROXY_API_KEY, chalk);
+    else if (agentId === "aider") await installAider(models, PORT, PROXY_API_KEY, chalk);
+    else if (agentId === "codex") await installCodex(models, PORT, PROXY_API_KEY, chalk);
+    else if (agentId === "opencrabs") await installOpenCrabs(models, PORT, PROXY_API_KEY, chalk);
+    else if (agentId === "kimi-code") await installKimiCode(models, PORT, PROXY_API_KEY, chalk);
+  }
+
+  // Auto-start prompt (only once)
+  const autoStart = await select({
+    message: "\n  Auto-start GemiNitro on login?",
+    choices: [
+      { name: "No — I will run `geminitro start` manually", value: "none" },
+      { name: "macOS — Install launchd service (recommended for Mac)", value: "launchd" },
+      { name: "Linux — Install systemd user service", value: "systemd" },
+    ],
+  });
+
+  if (autoStart !== "none") {
+    const execPath = process.execPath;
+    const scriptPath = require.resolve("../../bin/geminitro.js");
+    const result =
+      autoStart === "launchd"
+        ? installLaunchd(execPath, scriptPath)
+        : installSystemd(execPath, scriptPath);
+    console.log(chalk[result.ok ? "green" : "yellow"](`\n  ✓ ${result.msg}`));
+  }
+
+  // Auto-update prompt
+  const autoUpdate = await select({
+    message: "\n  Enable auto-update? (checks for new releases on start)",
+    choices: [
+      { name: "No — I will run `geminitro update` manually", value: false },
+      { name: "Yes — apply updates automatically on startup", value: true },
+    ],
+  });
+  writeEnvValue("AUTO_UPDATE", autoUpdate ? "true" : "false");
+  console.log(chalk.green(`  ✓ AUTO_UPDATE=${autoUpdate ? "true" : "false"} saved to .env`));
+
+  console.log(
+    chalk.bold(chalk.green(`\n  ✓ GemiNitro registered in ${selectedAgents.length} agent(s)\n`)),
+  );
 };
 
 const runUninstall = async () => {
@@ -824,4 +964,11 @@ const updateAgentConfig = (models) => {
   } catch {}
 };
 
-module.exports = { run, runUninstall, updateAgentConfig, FALLBACK_MODELS };
+module.exports = {
+  run,
+  runInteractive,
+  runUninstall,
+  updateAgentConfig,
+  detectAvailableAgents,
+  FALLBACK_MODELS,
+};

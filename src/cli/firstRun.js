@@ -187,7 +187,7 @@ const run = async (options = {}) => {
     });
 
     if (action === "install") {
-      await require("./install").run();
+      await require("./install").runInteractive();
     }
   }
 
