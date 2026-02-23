@@ -348,19 +348,28 @@ module.exports = (io) => {
     res.json(agents);
   });
   router.post("/api/agents/install", async (req, res) => {
-    const { agents } = req.body;
+    const { agents, scope = "global", autoStart = "none", autoUpdate = true } = req.body;
     if (!Array.isArray(agents) || agents.length === 0) {
       return res.status(400).json({ error: "No agents selected" });
     }
 
     const install = require("../src/cli/install");
+    const fs = require("fs");
+    const path = require("path");
     const chalk = require("chalk");
     const models = geminiService.getDynamicModels();
     const results = [];
     for (const agentId of agents) {
       try {
         if (agentId === "opencode") {
-          await install.installOpenCode(models, config.PORT, config.PROXY_API_KEY, chalk, null);
+          await install.installOpenCode(
+            models,
+            config.PORT,
+            config.PROXY_API_KEY,
+            chalk,
+            null,
+            scope,
+          );
         } else if (agentId === "continue") {
           await install.installContinue(models, config.PORT, config.PROXY_API_KEY, chalk);
         } else if (agentId === "aider") {
@@ -377,6 +386,35 @@ module.exports = (io) => {
         results.push({ agent: agentId, success: false, error: err.message });
       }
     }
+
+    // Handle auto-start
+    if (autoStart !== "none") {
+      try {
+        const execPath = process.execPath;
+        const scriptPath = require.resolve("../bin/geminitro.js");
+        if (autoStart === "launchd") {
+          install.installLaunchd(execPath, scriptPath);
+        } else if (autoStart === "systemd") {
+          install.installSystemd(execPath, scriptPath);
+        }
+      } catch {}
+    }
+
+    // Handle auto-update
+    try {
+      const envPath = path.join(__dirname, "../.env");
+      let content = "";
+      try {
+        content = fs.readFileSync(envPath, "utf8");
+      } catch {}
+      const line = `AUTO_UPDATE=${autoUpdate ? "true" : "false"}`;
+      const re = /^AUTO_UPDATE=.*$/m;
+      content = re.test(content)
+        ? content.replace(re, line)
+        : content + (content.endsWith("\n") ? "" : "\n") + line + "\n";
+      fs.writeFileSync(envPath, content);
+    } catch {}
+
     res.json({ success: true, results });
   });
   return router;

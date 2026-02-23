@@ -136,14 +136,27 @@ WantedBy=default.target
   }
 };
 
-const installOpenCode = async (models, port, apiKey, chalk, select) => {
-  const scope = await select({
-    message: "Where should GemiNitro be registered?",
-    choices: [
-      { name: `Global  (${OPENCODE_GLOBAL_CONFIG})  — all projects`, value: "global" },
-      { name: `Local   (./opencode.json)  — this project only`, value: "local" },
-    ],
-  });
+const installOpenCode = async (models, port, apiKey, chalk, select, scope = null) => {
+  // If scope is provided (API call), use it directly; otherwise prompt (terminal)
+  if (scope === null) {
+    scope = await select({
+      message: "Where should GemiNitro be registered?",
+      choices: [
+        { name: `Global  (${OPENCODE_GLOBAL_CONFIG})  — all projects`, value: "global" },
+        { name: `Local   (./opencode.json)  — this project only`, value: "local" },
+      ],
+    });
+  } else if (select) {
+    // scope provided but select also available - still prompt for confirmation
+    const confirmed = await select({
+      message: `Register GemiNitro ${scope === "global" ? "globally" : "locally"}?`,
+      choices: [
+        { name: "Yes", value: true },
+        { name: "Cancel", value: false },
+      ],
+    });
+    if (!confirmed) return;
+  }
 
   const targetPath =
     scope === "global" ? OPENCODE_GLOBAL_CONFIG : path.join(process.cwd(), "opencode.json");

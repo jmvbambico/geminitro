@@ -3,7 +3,15 @@ import { api } from "@/lib/api";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { CheckCircle2, RefreshCw, Loader2 } from "lucide-react";
 
-type Stage = "idle" | "validating" | "select" | "installing" | "success" | "error";
+type Stage =
+  | "idle"
+  | "validating"
+  | "select"
+  | "scope"
+  | "options"
+  | "installing"
+  | "success"
+  | "error";
 
 type Agent = { id: string; name: string };
 
@@ -15,8 +23,10 @@ export function Setup() {
   const [models, setModels] = useState<string[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
+  const [scope, setScope] = useState<"global" | "local">("global");
+  const [autoStart, setAutoStart] = useState<"none" | "launchd" | "systemd">("none");
+  const [autoUpdate, setAutoUpdate] = useState<boolean>(true);
 
-  // Fetch available agents on mount
   useEffect(() => {
     api.get("/api/agents").then((data: Agent[]) => {
       setAgents(data);
@@ -45,13 +55,28 @@ export function Setup() {
 
   const handleInstall = async () => {
     if (selectedAgents.length === 0) {
-      setStage("success");
+      setStage("options");
       return;
     }
+    if (selectedAgents.includes("opencode")) {
+      setStage("scope");
+    } else {
+      setStage("options");
+    }
+  };
+
+  const handleScope = () => {
+    setStage("options");
+  };
+
+  const handleOptions = async () => {
     setStage("installing");
     try {
       const res = await api.post("/api/agents/install", {
         agents: selectedAgents,
+        scope,
+        autoStart,
+        autoUpdate,
       });
       if (res.success) {
         setStage("success");
@@ -68,6 +93,9 @@ export function Setup() {
   const toggleAgent = (id: string) => {
     setSelectedAgents((prev) => (prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]));
   };
+
+  const isMac =
+    typeof navigator !== "undefined" && navigator.platform.toLowerCase().includes("mac");
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-6">
@@ -88,7 +116,6 @@ export function Setup() {
           </p>
         </div>
 
-        {/* Key input stage */}
         {(stage === "idle" || stage === "validating" || stage === "error") && (
           <div className="rounded-xl border border-border bg-card p-6 space-y-4">
             <label className="block text-sm font-medium">Gemini API Key</label>
@@ -112,7 +139,6 @@ export function Setup() {
           </div>
         )}
 
-        {/* Agent selection stage */}
         {stage === "select" && (
           <div className="rounded-xl border border-border bg-card p-6 space-y-4">
             <div className="text-center mb-4">
@@ -148,13 +174,127 @@ export function Setup() {
               >
                 {selectedAgents.length === 0
                   ? "Select at least one agent"
-                  : `Install to ${selectedAgents.length} agent${selectedAgents.length > 1 ? "s" : ""}`}
+                  : `Continue with ${selectedAgents.length} agent${selectedAgents.length > 1 ? "s" : ""}`}
               </button>
             </div>
           </div>
         )}
 
-        {/* Installing stage */}
+        {stage === "scope" && (
+          <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+            <h3 className="text-sm font-medium mb-3">Where should GemiNitro be registered?</h3>
+            <div className="space-y-2">
+              <label className="flex items-center gap-3 p-3 rounded-lg border border-input bg-background cursor-pointer hover:border-primary">
+                <input
+                  type="radio"
+                  name="scope"
+                  checked={scope === "global"}
+                  onChange={() => setScope("global")}
+                  className="w-4 h-4"
+                />
+                <div className="text-sm">
+                  <div className="font-medium">Global</div>
+                  <div className="text-muted-foreground">
+                    All projects (~/.config/opencode/opencode.json)
+                  </div>
+                </div>
+              </label>
+              <label className="flex items-center gap-3 p-3 rounded-lg border border-input bg-background cursor-pointer hover:border-primary">
+                <input
+                  type="radio"
+                  name="scope"
+                  checked={scope === "local"}
+                  onChange={() => setScope("local")}
+                  className="w-4 h-4"
+                />
+                <div className="text-sm">
+                  <div className="font-medium">Local</div>
+                  <div className="text-muted-foreground">This project only (./opencode.json)</div>
+                </div>
+              </label>
+            </div>
+            <button
+              onClick={handleScope}
+              className="w-full mt-4 px-4 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium"
+            >
+              Continue
+            </button>
+          </div>
+        )}
+
+        {stage === "options" && (
+          <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+            <h3 className="text-sm font-medium mb-3">Auto-start GemiNitro on login?</h3>
+            <div className="space-y-2 mb-4">
+              <label className="flex items-center gap-3 p-3 rounded-lg border border-input bg-background cursor-pointer hover:border-primary">
+                <input
+                  type="radio"
+                  name="autoStart"
+                  checked={autoStart === "none"}
+                  onChange={() => setAutoStart("none")}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">No — I will run manually</span>
+              </label>
+              {isMac && (
+                <label className="flex items-center gap-3 p-3 rounded-lg border border-input bg-background cursor-pointer hover:border-primary">
+                  <input
+                    type="radio"
+                    name="autoStart"
+                    checked={autoStart === "launchd"}
+                    onChange={() => setAutoStart("launchd")}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm">macOS — launchd service</span>
+                </label>
+              )}
+              {!isMac && (
+                <label className="flex items-center gap-3 p-3 rounded-lg border border-input bg-background cursor-pointer hover:border-primary">
+                  <input
+                    type="radio"
+                    name="autoStart"
+                    checked={autoStart === "systemd"}
+                    onChange={() => setAutoStart("systemd")}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm">Linux — systemd user service</span>
+                </label>
+              )}
+            </div>
+
+            <h3 className="text-sm font-medium mb-3">Enable auto-update?</h3>
+            <div className="space-y-2 mb-4">
+              <label className="flex items-center gap-3 p-3 rounded-lg border border-input bg-background cursor-pointer hover:border-primary">
+                <input
+                  type="radio"
+                  name="autoUpdate"
+                  checked={autoUpdate === true}
+                  onChange={() => setAutoUpdate(true)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">Yes — update automatically on startup</span>
+              </label>
+              <label className="flex items-center gap-3 p-3 rounded-lg border border-input bg-background cursor-pointer hover:border-primary">
+                <input
+                  type="radio"
+                  name="autoUpdate"
+                  checked={autoUpdate === false}
+                  onChange={() => setAutoUpdate(false)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">No — I will run manually</span>
+              </label>
+            </div>
+
+            <button
+              onClick={handleOptions}
+              className="w-full px-4 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium"
+            >
+              Install & Finish
+            </button>
+          </div>
+        )}
+
         {stage === "installing" && (
           <div className="rounded-xl border border-border bg-card p-6 space-y-4">
             <div className="flex items-center justify-center gap-2">
@@ -164,14 +304,15 @@ export function Setup() {
           </div>
         )}
 
-        {/* Success stage */}
         {stage === "success" && (
           <div className="rounded-xl border border-border bg-card p-6 text-center space-y-4">
             <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto" />
             <h2 className="text-lg font-semibold">Setup complete!</h2>
             <p className="text-sm text-muted-foreground">
-              GemiNitro has been registered to {selectedAgents.length} coding agent
+              GemiNitro registered to {selectedAgents.length} agent
               {selectedAgents.length > 1 ? "s" : ""}.
+              {autoStart !== "none" && " Auto-start enabled."}
+              {autoUpdate && " Auto-update enabled."}
             </p>
             <a
               href="/dashboard"
