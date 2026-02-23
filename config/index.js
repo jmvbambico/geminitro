@@ -1,4 +1,13 @@
 const path = require("path");
+const fs = require("fs");
+
+// Ensure .env exists with defaults (copy from .env.example if missing)
+const envPath = path.join(__dirname, "..", ".env");
+const envExamplePath = path.join(__dirname, "..", ".env.example");
+if (!fs.existsSync(envPath) && fs.existsSync(envExamplePath)) {
+  fs.copyFileSync(envExamplePath, envPath);
+}
+
 require("dotenv").config({ quiet: true });
 
 const DATA_DIR = process.env.GEMINITRO_DATA_DIR || path.join(__dirname, "..", ".geminitro");

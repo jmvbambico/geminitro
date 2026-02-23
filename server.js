@@ -48,8 +48,18 @@ try {
 
 updateService.backgroundCheck(logger, config.AUTO_UPDATE).catch(() => {});
 
-// Serve built dashboard at /dashboard
+// Ensure dashboard is built
 const dashboardPath = path.join(__dirname, "public");
+if (!fs.existsSync(dashboardPath)) {
+  console.log("Building dashboard (first run)...");
+  try {
+    require("child_process").execSync("npm run build", { stdio: "inherit" });
+  } catch {
+    console.error("Failed to build dashboard. Run 'npm run build' manually.");
+  }
+}
+
+// Serve built dashboard at /dashboard
 if (fs.existsSync(dashboardPath)) {
   app.use("/dashboard", express.static(dashboardPath));
   // SPA fallback — send index.html for any /dashboard/* route not matched as a file

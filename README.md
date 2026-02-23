@@ -49,10 +49,12 @@ cd geminitro
 npm install
 npm link
 
-# Start — detects first-run state and guides you through setup
+# Start — creates .env with defaults if missing, detects first-run state, guides setup
 geminitro start
 ```
 
+> A `.env` file with default values (`PORT=7536`, `PROXY_API_KEY=geminitro`, `AUTO_UPDATE=false`) is created automatically if missing. Customize it anytime.
+>
 > `geminitro start` detects whether the server is configured. On first run it offers to register with your coding agent and add API keys via terminal or browser.
 
 > Get free Gemini API keys at [aistudio.google.com](https://aistudio.google.com). Multiple keys multiply your free-tier throughput.
