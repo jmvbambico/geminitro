@@ -341,5 +341,43 @@ module.exports = (io) => {
     }
   });
 
+  // Agent detection and installation endpoints
+  router.get("/api/agents", (req, res) => {
+    const install = require("../src/cli/install");
+    const agents = install.detectAvailableAgents();
+    res.json(agents);
+  });
+  router.post("/api/agents/install", async (req, res) => {
+    const { agents } = req.body;
+    if (!Array.isArray(agents) || agents.length === 0) {
+      return res.status(400).json({ error: "No agents selected" });
+    }
+
+    const install = require("../src/cli/install");
+    const chalk = require("chalk");
+    const models = geminiService.getDynamicModels();
+    const results = [];
+    for (const agentId of agents) {
+      try {
+        if (agentId === "opencode") {
+          await install.installOpenCode(models, config.PORT, config.PROXY_API_KEY, chalk, null);
+        } else if (agentId === "continue") {
+          await install.installContinue(models, config.PORT, config.PROXY_API_KEY, chalk);
+        } else if (agentId === "aider") {
+          await install.installAider(models, config.PORT, config.PROXY_API_KEY, chalk);
+        } else if (agentId === "codex") {
+          await install.installCodex(models, config.PORT, config.PROXY_API_KEY, chalk);
+        } else if (agentId === "opencrabs") {
+          await install.installOpenCrabs(models, config.PORT, config.PROXY_API_KEY, chalk);
+        } else if (agentId === "kimi-code") {
+          await install.installKimiCode(models, config.PORT, config.PROXY_API_KEY, chalk);
+        }
+        results.push({ agent: agentId, success: true });
+      } catch (err) {
+        results.push({ agent: agentId, success: false, error: err.message });
+      }
+    }
+    res.json({ success: true, results });
+  });
   return router;
 };
