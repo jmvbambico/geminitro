@@ -64,16 +64,68 @@ const validateKey = async (apiKey) => {
   }
 };
 
+/**
+ * Convert OpenAI content format to Gemini parts format
+ * Handles both string content and multimodal array content
+ * @param {string|Array} content - OpenAI message content
+ * @returns {Array} Gemini parts array
+ */
+const convertContentToParts = (content) => {
+  // String content - simple text part
+  if (typeof content === "string") {
+    return [{ text: content }];
+  }
+
+  // Array content - multimodal format
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (part.type === "text") {
+          return { text: part.text };
+        }
+
+        if (part.type === "image_url" && part.image_url?.url) {
+          // Handle data URI: data:image/png;base64,xxxxx
+          const url = part.image_url.url;
+          if (url.startsWith("data:")) {
+            const match = url.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              return {
+                inlineData: {
+                  mimeType: match[1],
+                  data: match[2],
+                },
+              };
+            }
+          }
+          // Non-data URIs not supported by Gemini inline
+          logger.warn("Image URL not in data URI format, skipping:", url.slice(0, 50));
+          return null;
+        }
+
+        // Unknown part type, skip
+        return null;
+      })
+      .filter(Boolean);
+  }
+
+  // Fallback
+  return [{ text: String(content) }];
+};
+
 const mapMessagesToGemini = (messages) => {
   let systemParts = [];
   const contents = [];
 
   for (const msg of messages) {
     if (msg.role === "system") {
-      systemParts.push({ text: msg.content });
+      // System messages: convert content to parts
+      const parts = convertContentToParts(msg.content);
+      systemParts.push(...parts);
     } else {
       const role = msg.role === "assistant" ? "model" : "user";
-      contents.push({ role, parts: [{ text: msg.content }] });
+      const parts = convertContentToParts(msg.content);
+      contents.push({ role, parts });
     }
   }
 

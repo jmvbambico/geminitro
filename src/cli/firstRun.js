@@ -120,7 +120,6 @@ const waitForPort = async (port, maxMs = 3000) => {
 };
 
 const startServer = async (port) => {
-  // Kill any existing process on the port
   killByPort(port);
   const freed = await waitForPort(port);
   if (!freed) {
@@ -144,35 +143,6 @@ const run = async (options = {}) => {
   const registered = isProviderRegistered();
   const hasApiKeys = hasKeys();
 
-  if (!registered) {
-    console.log(
-      chalk.yellow("\n  ⚠  GemiNitro is not yet registered to any known coding agents.\n"),
-    );
-
-    const action = await select({
-      message: "What would you like to do?",
-      choices: [
-        { name: "Install now (interactive)", value: "install" },
-        { name: "Skip — just start the server", value: "skip" },
-      ],
-    });
-
-    if (action === "install") {
-      const agent = await select({
-        message: "Which coding agent should GemiNitro be registered to?",
-        choices: [
-          { name: "OpenCode", value: "opencode" },
-          { name: "Continue.dev  (VS Code / JetBrains)", value: "continue" },
-          { name: "Aider  (CLI)", value: "aider" },
-          { name: "Codex CLI  (OpenAI CLI)", value: "codex" },
-          { name: "OpenCrabs  (Rust TUI agent)", value: "opencrabs" },
-          { name: "Kimi Code  (Moonshot AI CLI)", value: "kimi-code" },
-        ],
-      });
-      await require("./install").run(agent);
-    }
-  }
-
   if (!hasApiKeys) {
     console.log(chalk.yellow("\n  ⚠  No API keys configured.\n"));
 
@@ -190,18 +160,37 @@ const run = async (options = {}) => {
       if (apiKey?.trim()) {
         await require("./keys").add(apiKey.trim());
       }
-      await startServer(config.PORT);
     } else if (method === "browser") {
       await startServer(config.PORT);
       await new Promise((r) => setTimeout(r, 1000));
       const setupUrl = `http://localhost:${config.PORT}/dashboard/setup`;
       console.log(chalk.cyan(`\n  Opening setup wizard: ${setupUrl}\n`));
       await openBrowser(setupUrl);
+      return;
     } else {
       await startServer(config.PORT);
+      return;
     }
-    return;
   }
+
+  if (!registered) {
+    console.log(
+      chalk.yellow("\n  ⚠  GemiNitro is not yet registered to any known coding agents.\n"),
+    );
+
+    const action = await select({
+      message: "What would you like to do?",
+      choices: [
+        { name: "Install now (interactive)", value: "install" },
+        { name: "Skip — just start the server", value: "skip" },
+      ],
+    });
+
+    if (action === "install") {
+      await require("./install").run();
+    }
+  }
+
   const choice = await select({
     message: "GemiNitro is ready. How do you want to proceed?",
     choices: [

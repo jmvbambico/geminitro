@@ -136,28 +136,6 @@ WantedBy=default.target
   }
 };
 
-const clearInstallData = () => {
-  const config = require("../../config");
-  const empty = JSON.stringify(
-    {
-      totalRequests: 0,
-      totalSuccess: 0,
-      totalErrors: 0,
-      daily: {},
-      models: {},
-      keyUsage: {},
-    },
-    null,
-    2,
-  );
-  try {
-    fs.writeFileSync(config.HISTORY_FILE, empty);
-  } catch {}
-  try {
-    fs.writeFileSync(config.MODELS_FILE, JSON.stringify([], null, 2));
-  } catch {}
-};
-
 const installOpenCode = async (models, port, apiKey, chalk, select) => {
   const scope = await select({
     message: "Where should GemiNitro be registered?",
@@ -568,8 +546,6 @@ const run = async (agent = "opencode") => {
 
   console.log(chalk.bold("\n  GemiNitro — Coding Agent Integration Setup\n"));
 
-  clearInstallData();
-
   console.log(chalk.gray(`  Checking for running server on :${PORT}...`));
   const liveModels = await fetchLiveModels(PORT, PROXY_API_KEY);
   const cachedModels = readCachedModels();
@@ -745,4 +721,107 @@ const runUninstall = async () => {
   console.log(chalk.gray("  Your keys and data in .geminitro/ are preserved\n"));
 };
 
-module.exports = { run, runUninstall };
+/**
+ * Update agent config with new models after key addition.
+ * Called when first key is added to sync live models to agent config.
+ * @param {string[]} models - Array of model IDs from Google API
+ */
+const updateAgentConfig = (models) => {
+  if (!models || models.length === 0) return;
+
+  const { PORT } = require("../../config");
+
+  // Update OpenCode configs (global and local)
+  for (const targetPath of detectInstalledLocations()) {
+    try {
+      const existing = readConfig(targetPath);
+      if (existing?.provider?.geminitro) {
+        const modelEntries = {};
+        for (const id of models) {
+          modelEntries[id] = {
+            name: `${id} (GemiNitro)`,
+            limit: { context: 1048576, output: 65536 },
+            modalities: { input: ["text", "image"], output: ["text"] },
+          };
+        }
+        existing.provider.geminitro.models = modelEntries;
+        fs.writeFileSync(targetPath, JSON.stringify(existing, null, 2) + "\n");
+      }
+    } catch {}
+  }
+
+  // Update Continue.dev config
+  try {
+    const yaml = require("js-yaml");
+    const configPath = path.join(os.homedir(), ".continue", "config.yaml");
+    if (fs.existsSync(configPath)) {
+      const doc = yaml.load(fs.readFileSync(configPath, "utf8")) || {};
+      if (Array.isArray(doc.models)) {
+        const geminitroModels = doc.models.filter((m) =>
+          String(m.apiBase || "").includes(`localhost:${PORT}`),
+        );
+        if (geminitroModels.length > 0) {
+          geminitroModels[0].model = models[0] ?? "gemini-2.0-flash";
+          geminitroModels[0].name = `GemiNitro / ${models[0] ?? "gemini-2.0-flash"}`;
+          fs.writeFileSync(configPath, yaml.dump(doc, { lineWidth: 120 }));
+        }
+      }
+    }
+  } catch {}
+
+  // Update Aider config
+  try {
+    const yaml = require("js-yaml");
+    const configPath = path.join(os.homedir(), ".aider.conf.yml");
+    if (fs.existsSync(configPath)) {
+      const doc = yaml.load(fs.readFileSync(configPath, "utf8")) || {};
+      if (String(doc["openai-api-base"] || "").includes(`localhost:${PORT}`)) {
+        doc.model = models[0] ?? "gemini-2.0-flash";
+        fs.writeFileSync(configPath, yaml.dump(doc, { lineWidth: 120 }));
+      }
+    }
+  } catch {}
+
+  // Update Codex CLI config
+  try {
+    const TOML = require("@iarna/toml");
+    const configPath = path.join(os.homedir(), ".codex", "config.toml");
+    if (fs.existsSync(configPath)) {
+      const doc = TOML.parse(fs.readFileSync(configPath, "utf8"));
+      if (String(doc?.providers?.openai?.base_url || "").includes(`localhost:${PORT}`)) {
+        doc.model = models[0] ?? "gemini-2.0-flash";
+        fs.writeFileSync(configPath, TOML.stringify(doc));
+      }
+    }
+  } catch {}
+
+  // Update OpenCrabs config
+  try {
+    const TOML = require("@iarna/toml");
+    const configPath = path.join(os.homedir(), ".opencrabs", "config.toml");
+    if (fs.existsSync(configPath)) {
+      const doc = TOML.parse(fs.readFileSync(configPath, "utf8"));
+      if (String(doc?.providers?.custom?.base_url ?? "").includes(`localhost:${PORT}`)) {
+        doc.providers.custom.default_model = models[0] ?? "gemini-2.0-flash";
+        fs.writeFileSync(configPath, TOML.stringify(doc));
+      }
+    }
+  } catch {}
+
+  // Update Kimi Code config
+  try {
+    const TOML = require("@iarna/toml");
+    const configPath = path.join(os.homedir(), ".kimi", "config.toml");
+    if (fs.existsSync(configPath)) {
+      const doc = TOML.parse(fs.readFileSync(configPath, "utf8"));
+      if (String(doc?.providers?.geminitro?.base_url ?? "").includes(`localhost:${PORT}`)) {
+        if (doc.models?.geminitro) {
+          doc.models.geminitro.model = models[0] ?? "gemini-2.0-flash";
+        }
+        fs.writeFileSync(configPath, TOML.stringify(doc));
+      }
+    }
+  } catch {}
+};
+
+module.exports = { run, runUninstall, updateAgentConfig, FALLBACK_MODELS };
