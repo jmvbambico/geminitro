@@ -903,22 +903,30 @@ const updateAgentConfig = (models) => {
     } catch {}
   }
 
-  // Update Continue.dev config
+  // Update Continue.dev config - add ALL models
   try {
     const yaml = require("js-yaml");
     const configPath = path.join(os.homedir(), ".continue", "config.yaml");
     if (fs.existsSync(configPath)) {
       const doc = yaml.load(fs.readFileSync(configPath, "utf8")) || {};
-      if (Array.isArray(doc.models)) {
-        const geminitroModels = doc.models.filter((m) =>
-          String(m.apiBase || "").includes(`localhost:${PORT}`),
-        );
-        if (geminitroModels.length > 0) {
-          geminitroModels[0].model = models[0] ?? "gemini-2.0-flash";
-          geminitroModels[0].name = `GemiNitro / ${models[0] ?? "gemini-2.0-flash"}`;
-          fs.writeFileSync(configPath, yaml.dump(doc, { lineWidth: 120 }));
-        }
+      if (!Array.isArray(doc.models)) doc.models = [];
+
+      // Remove existing GemiNitro entries
+      doc.models = doc.models.filter((m) => !String(m.apiBase || "").includes(`localhost:${PORT}`));
+
+      // Add ALL models as separate entries
+      for (const modelId of models) {
+        doc.models.push({
+          name: `GemiNitro / ${modelId}`,
+          provider: "openai",
+          model: modelId,
+          apiBase: `http://localhost:${PORT}/v1`,
+          apiKey: "geminitro",
+          roles: ["chat", "edit", "apply"],
+        });
       }
+
+      fs.writeFileSync(configPath, yaml.dump(doc, { lineWidth: 120 }));
     }
   } catch {}
 

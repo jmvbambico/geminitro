@@ -5,6 +5,8 @@ import { api } from "@/lib/api";
 export type LogEntry = { id: string; type: string; message: string; timestamp: string };
 export type KeyEntry = {
   tail: string;
+  type: string;
+  email: string | null;
   status: string;
   usage: number;
   errors: number;

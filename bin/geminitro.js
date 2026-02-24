@@ -306,4 +306,32 @@ keyCmd
     await require("../src/cli/keys").list();
   });
 
+keyCmd
+  .command("import-antigravity")
+  .description("Import Antigravity accounts from OpenCode (if available)")
+  .action(async () => {
+    await require("../src/cli/keys").importAntigravity();
+  });
+
+keyCmd
+  .command("oauth-antigravity")
+  .description("Authenticate with Google via OAuth for Antigravity (opens browser)")
+  .action(async () => {
+    await require("../src/cli/keys").oauthAntigravity();
+  });
+
+keyCmd
+  .command("oauth-gemini-cli")
+  .description("Authenticate with Google via OAuth for Gemini CLI (opens browser)")
+  .action(async () => {
+    await require("../src/cli/keys").oauthGeminiCli();
+  });
+
+keyCmd
+  .command("import-gemini-cli")
+  .description("Import Gemini CLI accounts from ~/.gemini (if available)")
+  .action(async () => {
+    await require("../src/cli/keys").importGeminiCli();
+  });
+
 program.parse(process.argv);

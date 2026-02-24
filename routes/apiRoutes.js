@@ -4,12 +4,19 @@ const geminiService = require("../services/geminiService");
 const statsService = require("../services/statsService");
 const config = require("../config");
 const logger = require("../utils/logger");
+const oauthService = require("../services/oauthService");
+const install = require("../src/cli/install");
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 
 const handleRequest = async (req, res, io, attemptedKeys = []) => {
-  const keyObj = keyService.getOptimalKey(attemptedKeys);
+  // Determine the target model up-front so key selection can honor model support
+  let targetModel = (req.body.model || "gemini-pro")
+    .replace("models/", "")
+    .replace(/^Proxy:\s*/, "");
+  // Normalize model to a simple string for matching against key metadata
+  const keyObj = keyService.getOptimalKey(attemptedKeys, targetModel);
 
   if (!keyObj) {
     const poolStatus = keyService.getPoolStatus();
@@ -29,10 +36,6 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
 
   const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
   const currentKey = keyObj.key;
-  let targetModel = (req.body.model || "gemini-pro")
-    .replace("models/", "")
-    .replace(/^Proxy:\s*/, "");
-
   if (!Array.isArray(req.body.messages)) {
     return res
       .status(400)
@@ -55,6 +58,7 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
         req.body.messages,
         generationConfig,
         true,
+        keyObj,
       );
 
       res.setHeader("Content-Type", "text/event-stream");
@@ -111,6 +115,7 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
         req.body.messages,
         generationConfig,
         false,
+        keyObj,
       );
       const text = result.response.text();
 
@@ -201,7 +206,6 @@ module.exports = (io) => {
       req.body.model = match[1];
       req.body.stream = match[2] === "streamGenerateContent";
     }
-    // Native Gemini REST format uses `contents` array; map to OpenAI `messages` if needed
     if (!req.body.messages && Array.isArray(req.body.contents)) {
       req.body.messages = req.body.contents.map((c) => ({
         role: c.role === "model" ? "assistant" : c.role,
@@ -212,9 +216,14 @@ module.exports = (io) => {
   });
 
   router.get("/v1/models", (req, res) => {
+    // Combine models from API keys + OAuth accounts
+    const apiKeyModels = geminiService.getDynamicModels() || [];
+    const oauthModels = keyService.getAllOAuthModels() || [];
+    const allModels = [...new Set([...apiKeyModels, ...oauthModels])];
+
     res.json({
       object: "list",
-      data: geminiService.getDynamicModels().map((id) => ({
+      data: allModels.map((id) => ({
         id,
         object: "model",
         created: 1677610602,
@@ -245,7 +254,7 @@ module.exports = (io) => {
       }
 
       const wasEmpty = keyService.getKeyPool().length === 0;
-      keyService.addKey(key);
+      keyService.addKey(key, { models: result.models || [] });
       logger.keyAdded(key.slice(-6), result.models?.length || 0);
 
       if (wasEmpty) {
@@ -253,12 +262,32 @@ module.exports = (io) => {
       } else if (result.models && result.models.length > 0) {
         await geminiService.saveCachedModels(result.models);
       }
+
+      // Update agent configs with all available models (API keys + OAuth)
+      const allModels = [
+        ...(geminiService.getDynamicModels() || []),
+        ...(keyService.getAllOAuthModels() || []),
+      ];
+      const uniqueModels = [...new Set(allModels)];
+      if (uniqueModels.length > 0) {
+        install.updateAgentConfig(uniqueModels);
+      }
+
       io.emit("stats_update", keyService.getSafeKeyPool());
       return res.json({ success: true, models: result.models });
     }
 
     if (keyService.addKey(key)) {
       logger.keyAdded(key.slice(-6), 0);
+      // Update agent configs
+      const allModels = [
+        ...(geminiService.getDynamicModels() || []),
+        ...(keyService.getAllOAuthModels() || []),
+      ];
+      const uniqueModels = [...new Set(allModels)];
+      if (uniqueModels.length > 0) {
+        install.updateAgentConfig(uniqueModels);
+      }
       io.emit("stats_update", keyService.getSafeKeyPool());
       return res.json({ success: true });
     }
@@ -276,6 +305,54 @@ module.exports = (io) => {
     } else {
       logger.warn(`Key not found: ...${req.params.keyFragment}`);
       res.status(404).json({ error: "Key not found." });
+    }
+  });
+
+  router.post("/api/keys/import-antigravity", async (req, res) => {
+    try {
+      const result = await keyService.importAntigravityAccounts();
+
+      // Update agent configs with all available models (API keys + OAuth)
+      const allModels = [
+        ...(geminiService.getDynamicModels() || []),
+        ...(keyService.getAllOAuthModels() || []),
+      ];
+      const uniqueModels = [...new Set(allModels)];
+      if (uniqueModels.length > 0) {
+        install.updateAgentConfig(uniqueModels);
+      }
+
+      io.emit("stats_update", keyService.getSafeKeyPool());
+      res.json(result);
+    } catch (e) {
+      logger.error("Failed to import antigravity accounts", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  router.post("/api/keys/oauth/:provider", async (req, res) => {
+    const provider = req.params.provider;
+    const validProviders = ["antigravity", "gemini_cli"];
+
+    if (!validProviders.includes(provider)) {
+      return res.status(400).json({
+        error: `Invalid provider. Valid: ${validProviders.join(", ")}`,
+      });
+    }
+
+    try {
+      await oauthService.startOAuthServer(async (err, _tokens) => {
+        if (err) {
+          logger.error("OAuth callback error", err);
+        }
+      });
+
+      const { url, state } = oauthService.generateAuthUrl(provider);
+
+      res.json({ authUrl: url, state });
+    } catch (e) {
+      logger.error("OAuth start failed", e);
+      res.status(500).json({ error: e.message });
     }
   });
 
@@ -341,7 +418,6 @@ module.exports = (io) => {
     }
   });
 
-  // Agent detection and installation endpoints
   router.get("/api/agents", (req, res) => {
     const install = require("../src/cli/install");
     const agents = install.detectAvailableAgents();
@@ -387,7 +463,6 @@ module.exports = (io) => {
       }
     }
 
-    // Handle auto-start
     if (autoStart !== "none") {
       try {
         const execPath = process.execPath;
@@ -400,7 +475,6 @@ module.exports = (io) => {
       } catch {}
     }
 
-    // Handle auto-update
     try {
       const envPath = path.join(__dirname, "../.env");
       let content = "";
