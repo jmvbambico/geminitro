@@ -226,6 +226,8 @@ const generateContent = async (
 ) => {
   if (keyObj && keyObj.type === "oauth") {
     const provider = keyObj.source || "antigravity";
+
+    // Both Antigravity and Gemini CLI use cloudcode-pa endpoint
     return await antigravityService.generateContentAntigravity(
       keyObj.key,
       modelName,

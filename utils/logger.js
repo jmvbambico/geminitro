@@ -1,5 +1,6 @@
 "use strict";
 
+const config = require("../config");
 const chalk = require("chalk");
 
 const LOG_COLORS = {
@@ -50,6 +51,45 @@ const http = (req, res, duration) => {
   const ms = `${duration.toFixed(0)}ms`.padStart(6);
 
   log("HTTP", `${chalk.white(method)} ${path} ${status} ${chalk.gray(ms)}`);
+};
+
+const httpVerbose = (req, res, duration, reqBody, resBody) => {
+  if (!config.VERBOSE_LOGGING) return;
+
+  const method = req.method;
+  const path = req.path;
+  const status = res.statusCode;
+  const ms = `${duration.toFixed(0)}ms`;
+
+  // Build multi-line verbose log
+  const lines = [];
+  lines.push(`${method} ${path} - ${status} (${ms})`);
+
+  // Request details
+  if (reqBody && Object.keys(reqBody).length > 0) {
+    lines.push(`Request:`);
+    try {
+      const formatted = JSON.stringify(reqBody, null, 2);
+      formatted.split("\n").forEach((line) => lines.push(`  ${line}`));
+    } catch {
+      lines.push(`  ${String(reqBody)}`);
+    }
+  }
+
+  // Response details
+  if (resBody) {
+    lines.push(`Response:`);
+    try {
+      const formatted = JSON.stringify(resBody, null, 2);
+      formatted.split("\n").forEach((line) => lines.push(`  ${line}`));
+    } catch {
+      lines.push(`  ${String(resBody)}`);
+    }
+  }
+
+  // Emit as single multi-line message
+  const message = lines.join("\n");
+  log("HTTP", message);
 };
 
 const keyAdded = (keyTail, modelCount) => {
@@ -105,6 +145,7 @@ module.exports = {
   setIo,
   log,
   http,
+  httpVerbose,
   keyAdded,
   keyRemoved,
   keyCooldown,

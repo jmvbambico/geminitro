@@ -6,18 +6,19 @@ import {
   Wifi,
   WifiOff,
   Settings,
-  Plus,
   RefreshCw,
   Eye,
   EyeOff,
   X,
   Palette,
+  Key,
+  Shield,
 } from "lucide-react";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { useHealth } from "@/hooks/useHealth";
 import { api } from "@/lib/api";
 
-function Modal({
+export function Modal({
   open,
   onClose,
   title,
@@ -67,6 +68,7 @@ export function AddKeyModal({ open, onClose }: { open: boolean; onClose: () => v
       } else {
         setAddSuccess(`Added. ${res.models?.length ?? 0} models available.`);
         setNewKey("");
+        setTimeout(onClose, 1500);
       }
     } catch {
       setAddError("Request failed — is the server running?");
@@ -74,53 +76,116 @@ export function AddKeyModal({ open, onClose }: { open: boolean; onClose: () => v
     setAdding(false);
   };
 
+  const startOAuth = async (provider: "antigravity" | "gemini_cli") => {
+    setAdding(true);
+    setAddError("");
+    setAddSuccess("");
+
+    try {
+      const res = await api.post(`/api/keys/oauth/${provider}`, {});
+      if (res.error) {
+        setAddError(res.error);
+        setAdding(false);
+        return;
+      }
+
+      if (!res.authUrl) {
+        setAddError("Invalid response from server.");
+        setAdding(false);
+        return;
+      }
+
+      // Store OAuth state before navigating
+      localStorage.setItem(
+        "geminitro_oauth_pending",
+        JSON.stringify({
+          provider,
+          returnTo: "overview",
+          timestamp: Date.now(),
+        }),
+      );
+
+      // Navigate to OAuth in same window
+      window.location.href = res.authUrl;
+    } catch {
+      setAddError("Request failed.");
+      setAdding(false);
+    }
+  };
+
   return (
     <Modal open={open} onClose={onClose} title="Add API Key">
-      <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          Get a free key at{" "}
-          <a
-            href="https://aistudio.google.com"
-            target="_blank"
-            rel="noreferrer"
-            className="underline text-primary"
-          >
-            aistudio.google.com
-          </a>
-          . The key is validated against Google's API before being saved.
-        </p>
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <input
-              type={showKey ? "text" : "password"}
-              placeholder="AIzaSy..."
-              value={newKey}
-              onChange={(e) => setNewKey(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-              className="w-full pr-9 pl-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+      <div className="space-y-4">
+        {/* Method 1: API Key */}
+        <div className="rounded-xl border border-border bg-muted/30 p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center">
+              <Key className="w-4 h-4 text-purple-500" />
+            </div>
+            <div>
+              <h3 className="text-sm font-medium">Google AI Studio</h3>
+              <p className="text-xs text-muted-foreground">Free & Fast API Keys</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type={showKey ? "text" : "password"}
+                placeholder="AIzaSy..."
+                value={newKey}
+                onChange={(e) => setNewKey(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+                className="w-full pr-9 pl-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <button
+                onClick={() => setShowKey((s) => !s)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
             <button
-              onClick={() => setShowKey((s) => !s)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={handleAdd}
+              disabled={adding || !newKey.trim()}
+              className="px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
             >
-              {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              {adding ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : "Add"}
             </button>
           </div>
-          <button
-            onClick={handleAdd}
-            disabled={adding || !newKey.trim()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 shrink-0"
-          >
-            {adding ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Plus className="w-3.5 h-3.5" />
-            )}
-            {adding ? "Validating…" : "Add"}
-          </button>
         </div>
-        {addError && <p className="text-xs text-destructive">{addError}</p>}
-        {addSuccess && <p className="text-xs text-green-500">{addSuccess}</p>}
+
+        {/* Method 2: Antigravity OAuth */}
+        <button
+          onClick={() => startOAuth("antigravity")}
+          disabled={adding}
+          className="w-full flex items-center gap-3 p-4 rounded-xl border border-border bg-muted/30 text-left transition-all hover:border-primary hover:shadow-sm disabled:opacity-50"
+        >
+          <div className="w-8 h-8 rounded-full bg-cyan-500/10 flex items-center justify-center">
+            <Shield className="w-4 h-4 text-cyan-500" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-medium">Antigravity Account</h3>
+            <p className="text-xs text-muted-foreground">Sign in with Google via OAuth</p>
+          </div>
+        </button>
+
+        {/* Method 3: Gemini CLI OAuth */}
+        <button
+          onClick={() => startOAuth("gemini_cli")}
+          disabled={adding}
+          className="w-full flex items-center gap-3 p-4 rounded-xl border border-border bg-muted/30 text-left transition-all hover:border-primary hover:shadow-sm disabled:opacity-50"
+        >
+          <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center">
+            <Key className="w-4 h-4 text-green-500" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-medium">Gemini CLI Account</h3>
+            <p className="text-xs text-muted-foreground">Use existing CLI credentials</p>
+          </div>
+        </button>
+
+        {addError && <p className="text-xs text-destructive text-center">{addError}</p>}
+        {addSuccess && <p className="text-xs text-green-500 text-center">{addSuccess}</p>}
       </div>
     </Modal>
   );

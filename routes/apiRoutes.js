@@ -75,17 +75,42 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
         for await (const chunk of result.stream) {
           if (!isClientConnected) break;
           let text = "";
+          const functionCalls = chunk.functionCalls || [];
           try {
             text = chunk.text();
           } catch {}
+
+          // Build delta for this chunk
+          const delta = {};
           if (text) {
+            delta.content = text;
+          }
+          if (functionCalls.length > 0) {
+            delta.tool_calls = functionCalls.map((fc, idx) => ({
+              index: idx,
+              id: `call_${requestId}_${idx}`,
+              type: "function",
+              function: {
+                name: fc.name,
+                arguments: JSON.stringify(fc.args),
+              },
+            }));
+          }
+
+          if (Object.keys(delta).length > 0) {
             res.write(
               `data: ${JSON.stringify({
                 id: requestId,
                 object: "chat.completion.chunk",
                 created: Math.floor(Date.now() / 1000),
                 model: targetModel,
-                choices: [{ delta: { content: text }, index: 0, finish_reason: null }],
+                choices: [
+                  {
+                    delta,
+                    index: 0,
+                    finish_reason: null,
+                  },
+                ],
               })}\n\n`,
             );
           }
@@ -118,11 +143,27 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
         keyObj,
       );
       const text = result.response.text();
+      const functionCalls = result.response.functionCalls || [];
 
       keyService.incrementKeyUsage(currentKey);
       statsService.trackRequest(currentKey, targetModel, true);
       io.emit("traffic_update");
       logger.proxyResponse(targetModel, "success", Date.now() - startTime);
+
+      // Build OpenAI-compatible response
+      const message = { role: "assistant", content: text };
+
+      // Map Gemini functionCalls to OpenAI tool_calls format
+      if (functionCalls.length > 0) {
+        message.tool_calls = functionCalls.map((fc, idx) => ({
+          id: `call_${requestId}_${idx}`,
+          type: "function",
+          function: {
+            name: fc.name,
+            arguments: JSON.stringify(fc.args),
+          },
+        }));
+      }
 
       res.json({
         id: requestId,
@@ -130,7 +171,7 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
         created: Math.floor(Date.now() / 1000),
         model: targetModel,
         choices: [
-          { message: { role: "assistant", content: text }, finish_reason: "stop", index: 0 },
+          { message, finish_reason: functionCalls.length > 0 ? "tool_calls" : "stop", index: 0 },
         ],
       });
       io.emit("stats_update", keyService.getSafeKeyPool());
@@ -229,7 +270,7 @@ module.exports = (io) => {
 
         io.emit("stats_update", keyService.getSafeKeyPool());
 
-        // Redirect back to setup page with success flag
+        // Redirect back to the page that initiated OAuth
         res.send(`
           <html>
             <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #0f172a; color: white;">
@@ -244,9 +285,26 @@ module.exports = (io) => {
                     timestamp: Date.now()
                   }));
 
-                  // Redirect back to setup page
+                  // Check where to redirect back to
+                  const pending = localStorage.getItem('geminitro_oauth_pending');
+                  let redirectUrl = '/dashboard/overview'; // Default to overview
+                  
+                  if (pending) {
+                    try {
+                      const data = JSON.parse(pending);
+                      // If initiated from setup wizard, go back to setup
+                      if (data.returnTo === 'setup') {
+                        redirectUrl = '/dashboard/setup?oauth=success';
+                      }
+                      // Otherwise (overview/dashboard), go to overview
+                    } catch (e) {
+                      console.error('Failed to parse OAuth pending data:', e);
+                    }
+                  }
+
+                  // Redirect
                   setTimeout(() => {
-                    window.location.href = '/dashboard/setup?oauth=success';
+                    window.location.href = redirectUrl;
                   }, 1000);
                 </script>
               </div>
@@ -431,6 +489,47 @@ module.exports = (io) => {
       res.json({ authUrl: url, state });
     } catch (e) {
       logger.error("OAuth start failed", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  router.post("/api/keys/oauth-manual", async (req, res) => {
+    const { refreshToken, provider, email } = req.body;
+    const validProviders = ["antigravity", "gemini_cli"];
+
+    if (!refreshToken || typeof refreshToken !== "string") {
+      return res.status(400).json({ error: "Refresh token is required." });
+    }
+
+    if (!provider || !validProviders.includes(provider)) {
+      return res.status(400).json({
+        error: `Invalid provider. Valid: ${validProviders.join(", ")}`,
+      });
+    }
+
+    try {
+      const result = await keyService.addOAuthToken(refreshToken, provider, email || null);
+
+      if (result.success) {
+        logger.info(`OAuth account added manually: ${email || "unknown"} (${provider})`);
+
+        // Update agent configs
+        const allModels = [
+          ...(geminiService.getDynamicModels() || []),
+          ...(keyService.getAllOAuthModels() || []),
+        ];
+        const uniqueModels = [...new Set(allModels)];
+        if (uniqueModels.length > 0) {
+          install.updateAgentConfig(uniqueModels);
+        }
+
+        io.emit("stats_update", keyService.getSafeKeyPool());
+        res.json({ success: true, models: result.models });
+      } else {
+        res.status(400).json({ error: result.error || "Failed to add OAuth account." });
+      }
+    } catch (e) {
+      logger.error("Manual OAuth token addition failed", e);
       res.status(500).json({ error: e.message });
     }
   });

@@ -414,17 +414,21 @@ async function generateContentAntigravity(
                     if (data.candidates && data.candidates[0] && data.candidates[0].content) {
                       return data.candidates[0].content.parts
                         .map((p) => {
-                          // Extract text from standard parts or thinking/reasoning parts
-                          return p.text || p.thinking || "";
+                          // Extract text from standard parts
+                          return p.text || "";
                         })
                         .join("");
                     }
                     if (data.content && Array.isArray(data.content)) {
                       // Anthropic-style content array
-                      return data.content.map((p) => p.text || p.thinking || "").join("");
+                      return data.content.map((p) => p.text || "").join("");
                     }
                     return "";
                   },
+                  functionCalls:
+                    data.candidates?.[0]?.content?.parts
+                      ?.filter((p) => p.functionCall)
+                      .map((p) => p.functionCall) || [],
                 };
               } catch {}
             }
@@ -442,10 +446,14 @@ async function generateContentAntigravity(
     response: {
       text: () => {
         if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-          return data.candidates[0].content.parts.map((p) => p.text).join("");
+          return data.candidates[0].content.parts.map((p) => p.text || "").join("");
         }
         return "";
       },
+      functionCalls:
+        data.candidates?.[0]?.content?.parts
+          ?.filter((p) => p.functionCall)
+          .map((p) => p.functionCall) || [],
     },
   };
 }

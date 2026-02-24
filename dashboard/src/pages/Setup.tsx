@@ -53,6 +53,7 @@ export function Setup() {
         "geminitro_oauth_pending",
         JSON.stringify({
           provider,
+          returnTo: "setup",
           timestamp: Date.now(),
         }),
       );

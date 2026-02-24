@@ -40,9 +40,27 @@ app.use(express.json({ limit: "50mb" }));
 
 app.use((req, res, next) => {
   const start = Date.now();
+  const reqBody = req.body;
+
+  // Capture response body for verbose logging
+  const originalJson = res.json.bind(res);
+  let resBody = null;
+
+  res.json = function (body) {
+    resBody = body;
+    return originalJson(body);
+  };
+
   res.on("finish", () => {
-    logger.http(req, res, Date.now() - start);
+    const duration = Date.now() - start;
+    logger.http(req, res, duration);
+
+    // Verbose logging with request/response bodies
+    if (config.VERBOSE_LOGGING) {
+      logger.httpVerbose(req, res, duration, reqBody, resBody);
+    }
   });
+
   next();
 });
 

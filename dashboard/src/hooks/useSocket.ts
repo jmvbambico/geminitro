@@ -6,6 +6,7 @@ export type LogEntry = { id: string; type: string; message: string; timestamp: s
 export type KeyEntry = {
   tail: string;
   type: string;
+  source: string | null;
   email: string | null;
   status: string;
   usage: number;

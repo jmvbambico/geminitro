@@ -176,6 +176,7 @@ const addOAuthToken = async (refreshToken, provider, email = null) => {
     // Discover models for this account - FAIL if no models found
     let supportedModels = [];
     try {
+      // Both Antigravity and Gemini CLI use the same cloudcode-pa endpoint
       supportedModels = await antigravityService.fetchAntigravityModels(refreshToken, email);
       logger.info(`Discovered ${supportedModels.length} models for ${email || provider}`);
     } catch (error) {
@@ -263,6 +264,7 @@ const getSafeKeyPool = () =>
   keyPool.map((k) => ({
     tail: k.key.slice(-6),
     type: k.type,
+    source: k.source || null,
     email: k.email,
     status: k.status,
     usage: k.usage,
@@ -464,7 +466,7 @@ const importGeminiCliAccounts = async () => {
       continue;
     }
 
-    // Discover models for this account - NO fallback, if it fails, account has no models
+    // Discover models for this account - use standard Gemini API for gemini-cli
     let supportedModels = [];
     try {
       supportedModels = await antigravityService.fetchAntigravityModels(account.key, account.email);
@@ -473,7 +475,7 @@ const importGeminiCliAccounts = async () => {
       );
     } catch (error) {
       logger.warn(
-        `Model discovery failed for ${account.email || account.key.slice(-6)}: ${error.message}. Account added with no models.`,
+        `Model discovery failed for ${account.email || account.key.slice(-6)}: ${error.message}.`,
       );
     }
 

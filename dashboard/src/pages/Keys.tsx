@@ -11,6 +11,10 @@ const statusColors: Record<string, string> = {
 
 export function Keys({ keys }: { keys: KeyEntry[] }) {
   const [newKey, setNewKey] = useState("");
+  const [accountType, setAccountType] = useState<"api_key" | "antigravity" | "gemini_cli">(
+    "api_key",
+  );
+  const [email, setEmail] = useState("");
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState("");
   const [addSuccess, setAddSuccess] = useState("");
@@ -22,12 +26,31 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
     setAddError("");
     setAddSuccess("");
     try {
-      const res = await api.post("/api/keys", { key: newKey.trim() });
-      if (res.error) {
-        setAddError(res.error);
+      if (accountType === "api_key") {
+        const res = await api.post("/api/keys", { key: newKey.trim() });
+        if (res.error) {
+          setAddError(res.error);
+        } else {
+          setAddSuccess(`Key added. ${res.models?.length ?? 0} models available.`);
+          setNewKey("");
+          setEmail("");
+        }
       } else {
-        setAddSuccess(`Key added. ${res.models?.length ?? 0} models available.`);
-        setNewKey("");
+        // Manual OAuth token entry
+        const res = await api.post("/api/keys/oauth-manual", {
+          refreshToken: newKey.trim(),
+          provider: accountType,
+          email: email.trim() || null,
+        });
+        if (res.error) {
+          setAddError(res.error);
+        } else {
+          setAddSuccess(
+            `${accountType === "antigravity" ? "Antigravity" : "Gemini CLI"} account added. ${res.models?.length ?? 0} models available.`,
+          );
+          setNewKey("");
+          setEmail("");
+        }
       }
     } catch {
       setAddError("Request failed — is the server running?");
@@ -105,28 +128,57 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
 
       <div className="rounded-xl border border-border bg-card p-4 mb-6">
         <h2 className="text-sm font-medium mb-3">Add Key</h2>
-        <div className="flex gap-2 flex-wrap items-center">
-          <div className="flex-1 flex gap-2 min-w-[300px]">
-            <input
-              type="password"
-              placeholder="API Key (AIzaSy...)"
-              value={newKey}
-              onChange={(e) => setNewKey(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-              className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-            <button
-              onClick={handleAdd}
-              disabled={adding || !newKey.trim()}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-            >
-              {adding ? (
-                <RefreshCw className="w-4 h-4 animate-spin" />
-              ) : (
-                <Plus className="w-4 h-4" />
-              )}
-              Add Key
-            </button>
+        <div className="mb-3">
+          <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+            Account Type
+          </label>
+          <select
+            value={accountType}
+            onChange={(e) =>
+              setAccountType(e.target.value as "api_key" | "antigravity" | "gemini_cli")
+            }
+            className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="api_key">API Key (AIzaSy...)</option>
+            <option value="antigravity">Antigravity (Manual - Refresh Token)</option>
+            <option value="gemini_cli">Gemini CLI (Manual - Refresh Token)</option>
+          </select>
+        </div>
+        <div className="flex gap-2 flex-wrap items-start">
+          <div className="flex-1 flex flex-col gap-2 min-w-[300px]">
+            {accountType !== "api_key" && (
+              <input
+                type="text"
+                placeholder="Email (optional)"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            )}
+            <div className="flex gap-2">
+              <input
+                type="password"
+                placeholder={
+                  accountType === "api_key" ? "API Key (AIzaSy...)" : "Refresh Token (1//...)"
+                }
+                value={newKey}
+                onChange={(e) => setNewKey(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+                className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <button
+                onClick={handleAdd}
+                disabled={adding || !newKey.trim()}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+              >
+                {adding ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+                Add
+              </button>
+            </div>
           </div>
 
           <div className="h-6 w-px bg-border mx-2 hidden sm:block"></div>
