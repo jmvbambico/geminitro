@@ -7,6 +7,15 @@ const cors = require("cors");
 const helmet = require("helmet");
 
 const config = require("./config");
+
+// Clean up old cache file (if exists)
+const oldCachePath = path.join(config.DATA_DIR, "antigravity-models.json");
+if (fs.existsSync(oldCachePath)) {
+  try {
+    fs.unlinkSync(oldCachePath);
+  } catch {}
+}
+
 const keyService = require("./services/keyService");
 const geminiService = require("./services/geminiService");
 const statsService = require("./services/statsService");

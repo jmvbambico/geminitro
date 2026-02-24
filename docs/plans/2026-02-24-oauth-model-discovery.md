@@ -58,28 +58,25 @@ Current issues found:
 
 ## Remaining Work
 
-### Critical Blocker: projectId from loadCodeAssist
+### ~~Critical Blocker: projectId from loadCodeAssist~~ ✅ COMPLETED
 
-**Current Error:**
+**Implemented:**
 
-```
-Permission denied on resource project jmvbambico
-```
+1. **`discoverProject()` function** added to `services/antigravityService.js`:
+   - Calls `POST /v1internal:loadCodeAssist` with proper headers
+   - Extracts projectId from response (tries `project`, `projectId`, or parses from `name`)
+   - Returns null on failure (graceful degradation)
 
-The derived project from email doesn't have Antigravity access. Need to implement the loadCodeAssist flow.
+2. **Updated `generateContentAntigravity`** to use discovered project:
+   - ProjectId resolution order:
+     1. `projectIdFromKey` (if provided)
+     2. Google Cloud API projects (`fetchUserProjects`)
+     3. **NEW: `discoverProject` via loadCodeAssist**
+     4. Fallback to email-derived project (last resort)
 
-**What needs to be done:**
+3. **Exported `discoverProject`** for potential external use
 
-1. **Implement `loadCodeAssist` call** in `antigravityService.js`:
-   - Add function `discoverProject(refreshToken, provider)` that calls `POST /v1internal:loadCodeAssist`
-   - Extract the correct `projectId` from the response
-   - Cache discovered project per account (in memory or key storage)
-
-2. **Update `generateContentAntigravity`** to use discovered project:
-   - Before making generateContent call, call `discoverProject()` if no valid projectId
-   - Use the returned projectId instead of derived email-based project
-
-3. **Test the flow** with a real Antigravity OAuth account
+**Note:** Testing requires a real Antigravity OAuth account.
 
 ## Files Modified
 

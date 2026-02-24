@@ -176,6 +176,92 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
 module.exports = (io) => {
   const router = express.Router();
 
+  // OAuth callback route - handles the redirect from Google
+  // This must be BEFORE the token middleware
+  router.get("/oauth-callback", async (req, res) => {
+    const { code, state, error } = req.query;
+
+    if (error) {
+      return res.send(`
+        <html>
+          <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #0f172a; color: white;">
+            <div style="text-align: center;">
+              <h1 style="color: #ef4444;">Authentication Failed</h1>
+              <p>${error}</p>
+              <button onclick="window.close()" style="margin-top: 20px; padding: 10px 20px; background: #3b82f6; color: white; border: none; rounded: 8px; cursor: pointer;">Close Window</button>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+
+    if (!code || !state) {
+      return res.status(400).send("Missing code or state");
+    }
+
+    try {
+      // In a real integration, we'd look up the provider from the state
+      // but here we just need to exchange the code.
+      // The oauthService already has pending_verifiers indexed by state.
+      const tokens = await oauthService.exchangeCode("antigravity", code, state).catch(async () => {
+        return await oauthService.exchangeCode("gemini_cli", code, state);
+      });
+
+      // Add to key pool
+      const result = await keyService.addOAuthToken(
+        tokens.refreshToken,
+        tokens.provider,
+        tokens.email,
+      );
+
+      if (result.success) {
+        logger.info(`OAuth account added via dashboard: ${tokens.email}`);
+
+        // Update agent configs
+        const allModels = [
+          ...(geminiService.getDynamicModels() || []),
+          ...(keyService.getAllOAuthModels() || []),
+        ];
+        const uniqueModels = [...new Set(allModels)];
+        if (uniqueModels.length > 0) {
+          install.updateAgentConfig(uniqueModels);
+        }
+
+        io.emit("stats_update", keyService.getSafeKeyPool());
+
+        // Redirect back to setup page with success flag
+        res.send(`
+          <html>
+            <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #0f172a; color: white;">
+              <div style="text-align: center;">
+                <h1 style="color: #10b981;">Authentication Successful!</h1>
+                <p>Welcome, ${tokens.email}. Redirecting...</p>
+                <script>
+                  // Store success in localStorage
+                  localStorage.setItem('geminitro_oauth_success', JSON.stringify({
+                    email: '${tokens.email}',
+                    provider: '${tokens.provider}',
+                    timestamp: Date.now()
+                  }));
+
+                  // Redirect back to setup page
+                  setTimeout(() => {
+                    window.location.href = '/dashboard/setup?oauth=success';
+                  }, 1000);
+                </script>
+              </div>
+            </body>
+          </html>
+        `);
+      } else {
+        throw new Error(result.error || "Failed to add account to pool");
+      }
+    } catch (err) {
+      logger.error("OAuth callback processing failed", err);
+      res.status(500).send(`OAuth Error: ${err.message}`);
+    }
+  });
+
   router.get("/api/health", (req, res) => {
     const poolStatus = keyService.getPoolStatus();
     res.json({
@@ -341,14 +427,7 @@ module.exports = (io) => {
     }
 
     try {
-      await oauthService.startOAuthServer(async (err, _tokens) => {
-        if (err) {
-          logger.error("OAuth callback error", err);
-        }
-      });
-
       const { url, state } = oauthService.generateAuthUrl(provider);
-
       res.json({ authUrl: url, state });
     } catch (e) {
       logger.error("OAuth start failed", e);
@@ -433,7 +512,11 @@ module.exports = (io) => {
     const fs = require("fs");
     const path = require("path");
     const chalk = require("chalk");
-    const models = geminiService.getDynamicModels();
+    const allAvailableModels = [
+      ...(geminiService.getDynamicModels() || []),
+      ...(keyService.getAllOAuthModels() || []),
+    ];
+    const models = [...new Set(allAvailableModels)];
     const results = [];
     for (const agentId of agents) {
       try {

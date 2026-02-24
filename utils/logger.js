@@ -81,8 +81,8 @@ const proxyRetry = (model, keyTail, attempt) => {
   log("PROXY", `↻ Retrying ${model} with ...${keyTail} (attempt ${attempt})`);
 };
 
-const modelRefresh = (count) => {
-  log("MODEL", `Refreshed ${count} models from Gemini API`);
+const modelRefresh = (count, source = "Gemini API") => {
+  log("MODEL", `Refreshed ${count} models from ${source}`);
 };
 
 const error = (message, err = null) => {

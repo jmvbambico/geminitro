@@ -870,8 +870,23 @@ const runUninstall = async () => {
   if (fs.existsSync(plistPath)) console.log(chalk.green(`  ✓ ${uninstallLaunchd().msg}`));
   if (fs.existsSync(servicePath)) console.log(chalk.green(`  ✓ ${uninstallSystemd().msg}`));
 
+  // Clear models and history
+  const config = require("../../config");
+  const modelsPath = config.MODELS_FILE;
+  const historyPath = config.HISTORY_FILE;
+  try {
+    if (fs.existsSync(modelsPath)) {
+      fs.writeFileSync(modelsPath, "[]");
+      console.log(chalk.green(`  ✓ Cleared ${path.basename(modelsPath)}`));
+    }
+    if (fs.existsSync(historyPath)) {
+      fs.writeFileSync(historyPath, "[]");
+      console.log(chalk.green(`  ✓ Cleared ${path.basename(historyPath)}`));
+    }
+  } catch {}
+
   console.log(chalk.bold(chalk.green("\n  ✓ GemiNitro uninstalled")));
-  console.log(chalk.gray("  Your keys and data in .geminitro/ are preserved\n"));
+  console.log(chalk.gray("  Your API keys in .geminitro/keys.json are preserved\n"));
 };
 
 /**
@@ -892,7 +907,7 @@ const updateAgentConfig = (models) => {
         const modelEntries = {};
         for (const id of models) {
           modelEntries[id] = {
-            name: `${id} (GemiNitro)`,
+            name: id,
             limit: { context: 1048576, output: 65536 },
             modalities: { input: ["text", "image"], output: ["text"] },
           };
@@ -917,7 +932,7 @@ const updateAgentConfig = (models) => {
       // Add ALL models as separate entries
       for (const modelId of models) {
         doc.models.push({
-          name: `GemiNitro / ${modelId}`,
+          name: modelId,
           provider: "openai",
           model: modelId,
           apiBase: `http://localhost:${PORT}/v1`,

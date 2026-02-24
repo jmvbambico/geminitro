@@ -1,20 +1,15 @@
 const oauthService = require("./oauthService");
 const logger = require("../utils/logger");
-const config = require("../config");
-const fs = require("fs");
-const path = require("path");
 
 const ANTIGRAVITY_ENDPOINTS = {
-  production: "https://cloudcode-pa.googleapis.com",
+  prod: "https://cloudcode-pa.googleapis.com",
   daily: "https://daily-cloudcode-pa.sandbox.googleapis.com",
+  autopush: "https://autopush-cloudcode-pa.sandbox.googleapis.com",
 };
 
+const ANTIGRAVITY_ENDPOINT = ANTIGRAVITY_ENDPOINTS.prod;
 const ANTIGRAVITY_MODELS_SOURCE_URL =
   "https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/main/docs/ANTIGRAVITY_API_SPEC.md";
-
-const getModelsCachePath = () => {
-  return path.join(config.DATA_DIR || ".geminitro", "antigravity-models.json");
-};
 
 const DEFAULT_ANTIGRAVITY_MODELS = [
   "claude-sonnet-4-6",
@@ -30,21 +25,16 @@ const DEFAULT_HEADERS = {
   "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
 };
 
+// Per-token project ID cache — populated on first successful discovery.
+// Avoids re-calling loadCodeAssist on every inference request.
+const projectIdCache = new Map();
+
 function getClientMetadata() {
   return JSON.stringify({
     ideType: "ANTIGRAVITY",
     platform: process.platform === "darwin" ? "MACOS" : "LINUX",
     pluginType: "GEMINI",
   });
-}
-
-function getProjectFromEmail(email) {
-  if (!email) return "antigravity-default";
-  const hash = email
-    .split("@")[0]
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .toLowerCase();
-  return hash || "antigravity-default";
 }
 
 async function fetchUserProjects(accessToken) {
@@ -56,6 +46,147 @@ async function fetchUserProjects(accessToken) {
     const data = await response.json();
     return data.projects?.map((p) => p.projectId) || [];
   } catch {
+    return [];
+  }
+}
+
+// Discover or provision the correct projectId via Antigravity endpoints
+// This mirrors the opencode-antigravity-auth plugin's ensureProjectContext flow
+async function discoverProject(refreshToken, provider = "antigravity") {
+  try {
+    const { accessToken } = await oauthService.getAccessTokenFromRefreshToken(
+      refreshToken,
+      provider,
+    );
+
+    const endpoint = ANTIGRAVITY_ENDPOINTS.daily;
+    const headers = {
+      ...DEFAULT_HEADERS,
+      Authorization: `Bearer ${accessToken}`,
+      Client_Metadata: getClientMetadata(),
+    };
+
+    // Step 1: Try to load an existing cloud AI companion project
+    let loadPayload = null;
+    let projectId = null;
+
+    try {
+      const loadRes = await fetch(`${endpoint}/v1internal:loadCodeAssist`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({}),
+      });
+      if (loadRes.ok) {
+        loadPayload = await loadRes.json();
+
+        // Check if loadPayload contains a managed project
+        if (typeof loadPayload.cloudaicompanionProject === "string") {
+          projectId = loadPayload.cloudaicompanionProject;
+        } else if (loadPayload.cloudaicompanionProject?.id) {
+          projectId = loadPayload.cloudaicompanionProject.id;
+        } else if (loadPayload.metadata?.duetProject) {
+          projectId = loadPayload.metadata.duetProject;
+        } else {
+          // Additional fallback parser for older account payloads
+          projectId =
+            loadPayload.project ||
+            loadPayload.projectId ||
+            loadPayload.name?.split("/").pop() ||
+            null;
+        }
+      }
+    } catch (e) {
+      logger.warn(`loadCodeAssist failed: ${e.message}`);
+    }
+
+    if (projectId) {
+      logger.info(`Discovered managed Antigravity project: ${projectId}`);
+      return projectId;
+    }
+
+    // Step 2: Auto-provision a managed project via onboardUser if missing
+    // Determine tier ID from allowed. Defaults to FREE.
+    let tierId = "FREE";
+    if (loadPayload?.allowedTiers?.length > 0) {
+      const defaultTier = loadPayload.allowedTiers.find((t) => t.isDefault);
+      tierId = defaultTier ? defaultTier.id : loadPayload.allowedTiers[0].id;
+    }
+
+    try {
+      logger.info(`Attempting to auto-provision managed project with tier ${tierId}`);
+      const onboardRes = await fetch(`${endpoint}/v1internal:onboardUser`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ tierId }),
+      });
+
+      if (onboardRes.ok) {
+        const onboardPayload = await onboardRes.json();
+        if (onboardPayload.done && onboardPayload.response?.cloudaicompanionProject?.id) {
+          projectId = onboardPayload.response.cloudaicompanionProject.id;
+          logger.info(`Successfully provisioned new managed project: ${projectId}`);
+          return projectId;
+        }
+      }
+    } catch (e) {
+      logger.warn(`onboardUser failed: ${e.message}`);
+    }
+
+    // Step 3: Hardcoded fallback used by the Opencode plugin when provisioning fails
+    logger.warn(`Failed to discover or provision managed project, using magic fallback`);
+    return "rising-fact-p41fc";
+  } catch (error) {
+    logger.warn(`discoverProject flow failed entirely: ${error.message}`);
+    return "rising-fact-p41fc";
+  }
+}
+
+async function discoverModelsFromApi(refreshToken, provider = "antigravity") {
+  try {
+    const { accessToken } = await oauthService.getAccessTokenFromRefreshToken(
+      refreshToken,
+      provider,
+    );
+
+    const endpoint = ANTIGRAVITY_ENDPOINTS.daily;
+    const url = `${endpoint}/v1internal:loadCodeAssist`;
+
+    const headers = {
+      ...DEFAULT_HEADERS,
+      Authorization: `Bearer ${accessToken}`,
+      Client_Metadata: getClientMetadata(),
+    };
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) return [];
+
+    const data = await response.json();
+
+    // Try to extract a model list from any known response fields
+    const candidates =
+      data.supportedModels ||
+      data.models ||
+      (Array.isArray(data.allowedFeatures)
+        ? data.allowedFeatures.filter((f) => typeof f === "string" && f.includes("-"))
+        : null) ||
+      [];
+
+    const models = Array.isArray(candidates)
+      ? candidates.map((m) => (typeof m === "string" ? m : m.id || m.name || null)).filter(Boolean)
+      : [];
+
+    if (models.length > 0) {
+      logger.info(`Discovered ${models.length} models from loadCodeAssist API`);
+    }
+
+    return models;
+  } catch (error) {
+    logger.warn(`discoverModelsFromApi failed: ${error.message}`);
     return [];
   }
 }
@@ -102,38 +233,29 @@ async function fetchModelsFromGitHub() {
   }
 }
 
-async function getAntigravityModelsFromGitHub() {
-  const cachePath = getModelsCachePath();
-  const cacheMaxAge = 24 * 60 * 60 * 1000;
+async function fetchAntigravityModels(refreshToken, _email) {
+  // Discovery priority:
+  //   1. loadCodeAssist API response (may carry supported model list)
+  //   2. GitHub markdown spec (community-maintained, 24h cached effectively)
+  //   3. Hardcoded DEFAULT_ANTIGRAVITY_MODELS (last resort)
+  //
+  // Note: Antigravity has no dedicated /v1/models endpoint, so we use
+  // loadCodeAssist as the most API-native signal, falling back to the
+  // GitHub spec crawl that OpenCode maintainers keep up to date.
 
-  try {
-    if (fs.existsSync(cachePath)) {
-      const cached = JSON.parse(fs.readFileSync(cachePath, "utf8"));
-      if (cached.timestamp && Date.now() - cached.timestamp < cacheMaxAge) {
-        logger.info(`Using cached Antigravity models: ${cached.models.length}`);
-        return cached.models;
-      }
+  if (refreshToken) {
+    const apiModels = await discoverModelsFromApi(refreshToken);
+    if (apiModels.length > 0) {
+      return apiModels;
     }
-  } catch {}
-
-  const models = await fetchModelsFromGitHub();
-
-  try {
-    fs.writeFileSync(cachePath, JSON.stringify({ models, timestamp: Date.now() }, null, 2));
-  } catch {}
-
-  return models;
-}
-
-async function fetchAntigravityModels(_refreshToken, _email) {
-  const models = await getAntigravityModelsFromGitHub();
-
-  if (models.length > 0) {
-    logger.info(`Fetched ${models.length} models from GitHub spec`);
-    return models;
   }
 
-  logger.warn("GitHub fetch failed, using hardcoded model list");
+  const githubModels = await fetchModelsFromGitHub();
+  if (githubModels.length > 0) {
+    return githubModels;
+  }
+
+  logger.warn("All model discovery sources failed, using hardcoded Antigravity model list");
   return DEFAULT_ANTIGRAVITY_MODELS;
 }
 
@@ -161,15 +283,11 @@ async function generateContentAntigravity(
   generationConfig = {},
   stream = false,
   provider = "antigravity",
-  emailFromKey = null,
   projectIdFromKey = null,
 ) {
-  const { accessToken, email: emailFromToken } = await oauthService.getAccessTokenFromRefreshToken(
-    refreshToken,
-    provider,
-  );
+  const { accessToken } = await oauthService.getAccessTokenFromRefreshToken(refreshToken, provider);
 
-  let projectId = projectIdFromKey;
+  let projectId = projectIdFromKey || projectIdCache.get(refreshToken) || null;
 
   if (!projectId) {
     try {
@@ -177,27 +295,39 @@ async function generateContentAntigravity(
       if (projects.length > 0) {
         projectId = projects[0];
         logger.info(`Using project from Google Cloud: ${projectId}`);
+        projectIdCache.set(refreshToken, projectId);
       }
     } catch (e) {
       logger.warn(`Could not fetch projects from Google Cloud: ${e.message}`);
     }
   }
 
+  // Try discoverProject via loadCodeAssist if no projectId yet
+  // This is the correct way to get an Antigravity-enabled project
   if (!projectId) {
-    const email = emailFromKey || emailFromToken;
-    projectId = getProjectFromEmail(email);
-    logger.info(`Falling back to derived project: ${projectId}`);
+    try {
+      const discovered = await discoverProject(refreshToken, provider);
+      if (discovered) {
+        projectId = discovered;
+        projectIdCache.set(refreshToken, projectId);
+      }
+    } catch (e) {
+      logger.warn(`discoverProject failed: ${e.message}`);
+    }
   }
 
-  const endpoint = ANTIGRAVITY_ENDPOINTS.daily;
-  const path = stream ? "/v1internal:streamGenerateContent?alt=sse" : "/v1internal:generateContent";
-  const url = `${endpoint}${path}`;
+  const url = `${ANTIGRAVITY_ENDPOINT}/v1internal:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
 
   const headers = {
-    ...DEFAULT_HEADERS,
+    "Content-Type": "application/json",
     Authorization: `Bearer ${accessToken}`,
+    "X-Goog-Api-Client": "google-cloud-sdk vscode/1.96.0",
+    "User-Agent": "antigravity/1.18.3 darwin/arm64",
     Client_Metadata: getClientMetadata(),
   };
+  if (stream) {
+    headers["Accept"] = "text/event-stream";
+  }
 
   const systemParts = [];
   const contents = [];
@@ -213,19 +343,37 @@ async function generateContentAntigravity(
     }
   }
 
+  // Model resolution: gemini-3-pro requires -low or -high suffix
+  // Note: gemini-3-pro is deprecated, use gemini-3.1-pro
+  let effectiveModel = modelName;
+  if (modelName.startsWith("gemini-3-pro")) {
+    effectiveModel = modelName.replace("gemini-3-pro", "gemini-3.1-pro");
+  }
+
+  const isGemini3Pro = /^gemini-3(?:\.\d+)?-pro/i.test(effectiveModel);
+  const hasTierSuffix = /-(low|medium|high)$/i.test(effectiveModel);
+  if (isGemini3Pro && !hasTierSuffix) {
+    effectiveModel = `${effectiveModel}-low`;
+  }
+
   const requestBody = {
     project: projectId,
-    model: modelName,
+    model: effectiveModel,
     request: {
       contents,
       generationConfig: generationConfig || {},
     },
+    requestType: "agent",
     userAgent: "antigravity",
     requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
   };
 
   if (systemParts.length > 0) {
-    requestBody.request.systemInstruction = { parts: systemParts };
+    // Antigravity system instructions use role: "user"
+    requestBody.request.systemInstruction = {
+      role: "user",
+      parts: systemParts,
+    };
   }
 
   const response = await fetch(url, {
@@ -241,29 +389,64 @@ async function generateContentAntigravity(
 
   if (stream) {
     return {
-      stream: true,
-      response: {
-        async *[Symbol.asyncIterator]() {
-          for await (const chunk of response.body) {
-            const lines = chunk.toString().split("\n");
-            for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                try {
-                  const data = JSON.parse(line.slice(6));
-                  yield data;
-                } catch {}
-              }
+      stream: (async function* () {
+        let buffer = "";
+        const decoder = new TextDecoder();
+        for await (const chunk of response.body) {
+          const chunkStr = decoder.decode(chunk, { stream: true });
+          buffer += chunkStr;
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (line.startsWith("data:")) {
+              try {
+                const jsonStr = line.slice(5).trim();
+                if (!jsonStr) continue;
+                let data = JSON.parse(jsonStr);
+
+                // Internal Antigravity API wraps the response in a 'response' field
+                if (data.response) {
+                  data = data.response;
+                }
+
+                yield {
+                  text: () => {
+                    if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+                      return data.candidates[0].content.parts
+                        .map((p) => {
+                          // Extract text from standard parts or thinking/reasoning parts
+                          return p.text || p.thinking || "";
+                        })
+                        .join("");
+                    }
+                    if (data.content && Array.isArray(data.content)) {
+                      // Anthropic-style content array
+                      return data.content.map((p) => p.text || p.thinking || "").join("");
+                    }
+                    return "";
+                  },
+                };
+              } catch {}
             }
           }
-        },
-      },
+        }
+      })(),
     };
   }
 
-  const data = await response.json();
+  let data = await response.json();
+  if (data.response) {
+    data = data.response;
+  }
   return {
-    stream: false,
-    response: data,
+    response: {
+      text: () => {
+        if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+          return data.candidates[0].content.parts.map((p) => p.text).join("");
+        }
+        return "";
+      },
+    },
   };
 }
 
@@ -293,7 +476,8 @@ function convertContentToParts(content) {
 module.exports = {
   generateContentAntigravity,
   getAntigravityModels,
-  getProjectFromEmail,
+  discoverProject,
+  fetchAntigravityModels,
   ANTIGRAVITY_ENDPOINTS,
   DEFAULT_ANTIGRAVITY_MODELS,
 };

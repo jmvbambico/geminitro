@@ -137,8 +137,6 @@ const fetchGoogleModels = async () => {
           .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
           .map((m) => m.name.replace("models/", ""));
         dynamicModels.sort((a, _b) => (a.includes("pro") ? -1 : 1));
-        logger.modelRefresh(dynamicModels.length);
-        await saveCachedModels(dynamicModels);
       } else if (data.error) {
         logger.error("Failed to fetch models from Google", new Error(data.error.message));
       }
@@ -155,10 +153,13 @@ const fetchGoogleModels = async () => {
     const allModels = [...new Set([...existingModels, ...oauthModels])];
     if (allModels.length !== existingModels.length) {
       dynamicModels = allModels;
-      logger.modelRefresh(dynamicModels.length);
-      await saveCachedModels(dynamicModels);
     }
   }
+
+  // Save and log final count (after merge)
+  const source = oauthModels.length > 0 ? "Gemini API + OAuth" : "Gemini API";
+  logger.modelRefresh(dynamicModels.length, source);
+  await saveCachedModels(dynamicModels);
 
   // If no models at all, try OAuth as fallback (in case no API keys exist)
   if ((!dynamicModels || dynamicModels.length === 0) && !apiKeyObj) {
@@ -170,7 +171,7 @@ const fetchGoogleModels = async () => {
           oauthKeyObj.source || "antigravity",
         );
         dynamicModels = await antigravityService.getAntigravityModels(oauthKeyObj.key, email);
-        logger.modelRefresh(dynamicModels.length);
+        logger.modelRefresh(dynamicModels.length, "OAuth (Antigravity)");
         await saveCachedModels(dynamicModels);
         return;
       } catch (error) {
@@ -178,7 +179,7 @@ const fetchGoogleModels = async () => {
           `Failed to fetch dynamic models for OAuth key: ${error.message}. Using empty model list.`,
         );
         dynamicModels = [];
-        logger.modelRefresh(dynamicModels.length);
+        logger.modelRefresh(dynamicModels.length, "OAuth (Antigravity)");
         await saveCachedModels(dynamicModels);
         return;
       }
@@ -190,7 +191,21 @@ const getDynamicModels = () => dynamicModels;
 
 const initializeModelFetching = () => {
   loadCachedModels();
-  setTimeout(fetchGoogleModels, config.INITIAL_MODEL_FETCH_DELAY);
+  setTimeout(async () => {
+    await fetchGoogleModels();
+    // Sync agent config files on startup so they always reflect the
+    // current key pool (API keys + OAuth) without needing a manual re-install.
+    try {
+      const install = require("../src/cli/install");
+      const allModels = [...new Set([...dynamicModels, ...keyService.getAllOAuthModels()])];
+      if (allModels.length > 0) {
+        install.updateAgentConfig(allModels);
+        logger.info(`Synced agent configs with ${allModels.length} models on startup`);
+      }
+    } catch (e) {
+      logger.warn(`Failed to sync agent configs on startup: ${e.message}`);
+    }
+  }, config.INITIAL_MODEL_FETCH_DELAY);
   setInterval(fetchGoogleModels, config.MODEL_FETCH_INTERVAL);
 };
 
@@ -218,7 +233,6 @@ const generateContent = async (
       generationConfig,
       stream,
       provider,
-      keyObj.email,
       keyObj.projectId,
     );
   }

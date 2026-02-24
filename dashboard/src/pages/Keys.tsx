@@ -15,7 +15,6 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
   const [addError, setAddError] = useState("");
   const [addSuccess, setAddSuccess] = useState("");
   const [removing, setRemoving] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
 
   const handleAdd = async () => {
     if (!newKey.trim()) return;
@@ -36,21 +35,23 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
     setAdding(false);
   };
 
-  const handleImportAntigravity = async () => {
-    setImporting(true);
+  const handleImport = async () => {
+    setAdding(true);
+    setAddError("");
+    setAddSuccess("");
     try {
       const res = await api.post("/api/keys/import-antigravity", {});
-      if (res.imported > 0) {
-        setAddSuccess(`Imported ${res.imported} Antigravity account(s).`);
-      } else if (res.skipped > 0) {
-        setAddSuccess(`${res.skipped} account(s) already in pool.`);
+      if (res.error) {
+        setAddError(res.error);
+      } else if (res.imported > 0) {
+        setAddSuccess(`Imported ${res.imported} account(s)!`);
       } else {
-        setAddError("No Antigravity accounts found to import.");
+        setAddError("No accounts found in OpenCode config.");
       }
     } catch {
-      setAddError("Import failed — is the server running?");
+      setAddError("Request failed.");
     }
-    setImporting(false);
+    setAdding(false);
   };
 
   const handleRemove = async (tail: string) => {
@@ -61,41 +62,101 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
     setRemoving(null);
   };
 
+  const startOAuth = async (provider: "antigravity" | "gemini_cli") => {
+    setAdding(true);
+    setAddError("");
+    setAddSuccess("");
+
+    try {
+      const res = await api.post(`/api/keys/oauth/${provider}`, {});
+      if (res.error) {
+        setAddError(res.error);
+        setAdding(false);
+        return;
+      }
+
+      if (!res.authUrl) {
+        setAddError("Invalid response from server.");
+        setAdding(false);
+        return;
+      }
+
+      // Store OAuth state before navigating
+      localStorage.setItem(
+        "geminitro_oauth_pending",
+        JSON.stringify({
+          provider,
+          returnTo: "keys",
+          timestamp: Date.now(),
+        }),
+      );
+
+      // Navigate to OAuth in same window (no popup blockers!)
+      window.location.href = res.authUrl;
+    } catch {
+      setAddError("Request failed.");
+      setAdding(false);
+    }
+  };
+
   return (
     <div className="p-6">
       <h1 className="text-xl font-semibold mb-6">API Keys</h1>
 
       <div className="rounded-xl border border-border bg-card p-4 mb-6">
         <h2 className="text-sm font-medium mb-3">Add Key</h2>
-        <div className="flex gap-2 flex-wrap">
-          <input
-            type="password"
-            placeholder="AIzaSy..."
-            value={newKey}
-            onChange={(e) => setNewKey(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            className="flex-1 min-w-[200px] px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-          <button
-            onClick={handleAdd}
-            disabled={adding || !newKey.trim()}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-          >
-            {adding ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-            {adding ? "Validating..." : "Add"}
-          </button>
-          <button
-            onClick={handleImportAntigravity}
-            disabled={importing}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-600 text-white text-sm font-medium disabled:opacity-50 hover:bg-cyan-700 transition-colors"
-          >
-            {importing ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
+        <div className="flex gap-2 flex-wrap items-center">
+          <div className="flex-1 flex gap-2 min-w-[300px]">
+            <input
+              type="password"
+              placeholder="API Key (AIzaSy...)"
+              value={newKey}
+              onChange={(e) => setNewKey(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <button
+              onClick={handleAdd}
+              disabled={adding || !newKey.trim()}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+            >
+              {adding ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4" />
+              )}
+              Add Key
+            </button>
+          </div>
+
+          <div className="h-6 w-px bg-border mx-2 hidden sm:block"></div>
+
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => startOAuth("antigravity")}
+              disabled={adding}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-600/10 text-cyan-600 dark:text-cyan-400 text-sm font-medium hover:bg-cyan-600/20 transition-colors disabled:opacity-50"
+            >
               <Shield className="w-4 h-4" />
-            )}
-            {importing ? "Importing..." : "Import Antigravity"}
-          </button>
+              Add Antigravity
+            </button>
+            <button
+              onClick={() => startOAuth("gemini_cli")}
+              disabled={adding}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600/10 text-green-600 dark:text-green-400 text-sm font-medium hover:bg-green-600/20 transition-colors disabled:opacity-50"
+            >
+              <Key className="w-4 h-4" />
+              Add Gemini CLI
+            </button>
+            <button
+              onClick={handleImport}
+              disabled={adding}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-600/10 text-orange-600 dark:text-orange-400 text-sm font-medium hover:bg-orange-600/20 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Import
+            </button>
+          </div>
         </div>
         {addError && <p className="text-sm text-destructive mt-2">{addError}</p>}
         {addSuccess && <p className="text-sm text-green-500 mt-2">{addSuccess}</p>}

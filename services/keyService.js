@@ -22,26 +22,52 @@ const loadKeys = () => {
     const raw = fs.readFileSync(config.KEY_FILE, "utf8");
     const keys = raw.trim() ? JSON.parse(raw) : [];
 
+    // Load models.json to check for any cached models (for migration)
+    let cachedModels = [];
+    try {
+      if (fs.existsSync(config.MODELS_FILE)) {
+        cachedModels = JSON.parse(fs.readFileSync(config.MODELS_FILE, "utf8")) || [];
+      }
+    } catch {}
+
     const existingKeysMap = new Map(keyPool.map((k) => [k.key, k]));
 
     keyPool = keys.map((k) => {
       // Handle both old format (string key) and new format (object)
       const keyStr = typeof k === "string" ? k : k.key;
       const existing = existingKeysMap.get(keyStr);
+      const keyType = typeof k === "object" ? k.type || "api_key" : "api_key";
+      const keySupportedModels = Array.isArray(k?.supportedModels) ? k.supportedModels : [];
+
+      // Migration: if OAuth key has empty supportedModels but models.json has models,
+      // assume they belong to this OAuth key
+      const migratedModels =
+        keyType === "oauth" && keySupportedModels.length === 0 && cachedModels.length > 0
+          ? cachedModels
+          : keySupportedModels;
+
       return (
         existing || {
           key: keyStr,
-          type: typeof k === "object" ? k.type || "api_key" : "api_key",
+          type: keyType,
           email: typeof k === "object" ? k.email : null,
           status: "active",
           usage: 0,
           errors: 0,
           lastUsed: 0,
-          // New: track per-key supported models available to the system
-          supportedModels: Array.isArray(k?.supportedModels) ? k.supportedModels : [],
+          supportedModels: migratedModels,
         }
       );
     });
+
+    // Save migrated keys if any supportedModels were added
+    const needsSave = keyPool.some(
+      (k) => k.type === "oauth" && Array.isArray(k.supportedModels) && k.supportedModels.length > 0,
+    );
+    if (needsSave) {
+      saveKeys();
+    }
+
     logger.info(`Loaded ${keyPool.length} keys`);
   } catch (e) {
     logger.error("Failed to load keys", e);
@@ -147,15 +173,45 @@ const addKey = (key, options = {}) => {
 
 const addOAuthToken = async (refreshToken, provider, email = null) => {
   if (refreshToken && !keyPool.find((k) => k.key === refreshToken)) {
-    // Discover models for this account - NO fallback
+    // Discover models for this account - FAIL if no models found
     let supportedModels = [];
     try {
       supportedModels = await antigravityService.fetchAntigravityModels(refreshToken, email);
       logger.info(`Discovered ${supportedModels.length} models for ${email || provider}`);
     } catch (error) {
       logger.warn(
-        `Model discovery failed for ${email || refreshToken.slice(-6)}: ${error.message}. Account added with no models.`,
+        `Model discovery failed for ${email || refreshToken.slice(-6)}: ${error.message}`,
       );
+    }
+
+    // If no models found, fail the account addition
+    if (supportedModels.length === 0) {
+      return {
+        success: false,
+        error: "No models found for this account. Cannot add to pool.",
+        models: [],
+      };
+    }
+
+    // Check if models already exist in models.json
+    let modelsUpdated = false;
+    try {
+      const geminiService = require("./geminiService");
+      const existingModels = geminiService.loadCachedModels();
+      const existingSet = new Set(existingModels || []);
+
+      // Find new models not in models.json
+      const newModels = supportedModels.filter((m) => !existingSet.has(m));
+
+      if (newModels.length > 0) {
+        // Merge and save to models.json
+        const allModels = [...new Set([...(existingModels || []), ...newModels])];
+        await geminiService.saveCachedModels(allModels);
+        modelsUpdated = true;
+        logger.info(`Added ${newModels.length} new models to models.json`);
+      }
+    } catch (error) {
+      logger.warn(`Failed to check/update models.json: ${error.message}`);
     }
 
     keyPool.push({
@@ -170,7 +226,7 @@ const addOAuthToken = async (refreshToken, provider, email = null) => {
       supportedModels,
     });
     await saveKeys();
-    return { success: true, models: supportedModels };
+    return { success: true, models: supportedModels, modelsUpdated };
   }
   return { success: false, models: [] };
 };
@@ -274,11 +330,12 @@ const detectAntigravityAccounts = () => {
 
 const importAntigravityAccounts = async () => {
   const accounts = detectAntigravityAccounts();
-  if (accounts.length === 0) return { imported: 0, skipped: 0, models: [] };
+  if (accounts.length === 0) return { imported: 0, skipped: 0, models: [], modelsUpdated: false };
 
   let imported = 0;
   let skipped = 0;
   const allDiscoveredModels = [];
+  let modelsUpdated = false;
 
   for (const account of accounts) {
     // Check if already exists
@@ -288,7 +345,7 @@ const importAntigravityAccounts = async () => {
       continue;
     }
 
-    // Discover models for this account - NO fallback, if it fails, account has no models
+    // Discover models for this account - FAIL if no models found
     let supportedModels = [];
     try {
       supportedModels = await antigravityService.fetchAntigravityModels(account.key, account.email);
@@ -297,8 +354,35 @@ const importAntigravityAccounts = async () => {
       );
     } catch (error) {
       logger.warn(
-        `Model discovery failed for ${account.email || account.key.slice(-6)}: ${error.message}. Account added with no models.`,
+        `Model discovery failed for ${account.email || account.key.slice(-6)}: ${error.message}`,
       );
+    }
+
+    // If no models found, skip this account
+    if (supportedModels.length === 0) {
+      logger.warn(`Skipping account ${account.email || "unknown"} - no models found`);
+      skipped++;
+      continue;
+    }
+
+    // Check if models already exist in models.json
+    try {
+      const geminiService = require("./geminiService");
+      const existingModels = geminiService.loadCachedModels();
+      const existingSet = new Set(existingModels || []);
+
+      // Find new models not in models.json
+      const newModels = supportedModels.filter((m) => !existingSet.has(m));
+
+      if (newModels.length > 0) {
+        // Merge and save to models.json
+        const allModels = [...new Set([...existingModels, ...newModels])];
+        await geminiService.saveCachedModels(allModels);
+        modelsUpdated = true;
+        logger.info(`Added ${newModels.length} new models to models.json`);
+      }
+    } catch (error) {
+      logger.warn(`Failed to check/update models.json: ${error.message}`);
     }
 
     // Add unique models to overall list
@@ -324,7 +408,7 @@ const importAntigravityAccounts = async () => {
     logger.info(`Imported ${imported} antigravity accounts, skipped ${skipped} duplicates`);
   }
 
-  return { imported, skipped, models: allDiscoveredModels };
+  return { imported, skipped, models: allDiscoveredModels, modelsUpdated };
 };
 
 const getAntigravityAccounts = () => detectAntigravityAccounts();

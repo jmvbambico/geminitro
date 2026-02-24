@@ -2,21 +2,29 @@
 
 const crypto = require("crypto");
 const http = require("http");
-const url = require("url");
 const config = require("../config");
 
-// Validate OAuth credentials
-if (!config.OAUTH_CLIENT_ID || !config.OAUTH_CLIENT_SECRET) {
-  throw new Error(
-    "OAuth credentials not configured. Set OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET in .env",
-  );
-}
+// OAuth credentials - set in .env (gitignored)
+// Required: OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET
+
+// Get credentials from config (required - no defaults)
+const getOAuthClientId = () => {
+  const id = config.OAUTH_CLIENT_ID || process.env.OAUTH_CLIENT_ID;
+  if (!id) throw new Error("OAUTH_CLIENT_ID not configured - add to .env");
+  return id;
+};
+
+const getOAuthClientSecret = () => {
+  const secret = config.OAUTH_CLIENT_SECRET || process.env.OAUTH_CLIENT_SECRET;
+  if (!secret) throw new Error("OAUTH_CLIENT_SECRET not configured - add to .env");
+  return secret;
+};
 
 // OAuth client configurations
 const OAUTH_CLIENTS = {
   antigravity: {
-    clientId: config.OAUTH_CLIENT_ID,
-    clientSecret: config.OAUTH_CLIENT_SECRET,
+    clientId: getOAuthClientId(),
+    clientSecret: getOAuthClientSecret(),
     redirectUri: "http://localhost:7536/oauth-callback",
     authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
@@ -30,8 +38,8 @@ const OAUTH_CLIENTS = {
     provider: "antigravity",
   },
   gemini_cli: {
-    clientId: config.OAUTH_CLIENT_ID,
-    clientSecret: config.OAUTH_CLIENT_SECRET,
+    clientId: getOAuthClientId(),
+    clientSecret: getOAuthClientSecret(),
     redirectUri: "http://localhost:7536/oauth-callback",
     authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
@@ -47,7 +55,144 @@ const OAUTH_CLIENTS = {
 };
 
 let oauthServer = null;
+let oauthServerResolver = null; // Resolves the startOAuthServer promise
+let oauthServerRejecter = null; // Rejects the startOAuthServer promise
 let pending_verifiers = {}; // { state: { verifier, provider, resolve, reject, timeout } }
+
+const OAUTH_CALLBACK_PORT = 7536;
+
+// Start a local OAuth server to receive the callback
+// This is used by CLI-based OAuth flows
+function startOAuthServer() {
+  return new Promise((resolve, reject) => {
+    // Prevent multiple servers
+    if (oauthServer) {
+      return resolve({
+        refreshToken: null,
+        accessToken: null,
+        email: null,
+        provider: "antigravity",
+        message: "Server already running",
+      });
+    }
+
+    oauthServerResolver = resolve;
+    oauthServerRejecter = reject;
+
+    oauthServer = http.createServer(async (req, res) => {
+      const parsedUrl = new URL(req.url, `http://localhost:${OAUTH_CALLBACK_PORT}`);
+
+      if (parsedUrl.pathname === "/oauth-callback") {
+        const { code, state, error } = parsedUrl.searchParams;
+
+        if (error) {
+          res.writeHead(400, { "Content-Type": "text/html" });
+          res.end(`
+            <html>
+              <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #0f172a; color: white;">
+                <div style="text-align: center;">
+                  <h1 style="color: #ef4444;">Authentication Failed</h1>
+                  <p>${error}</p>
+                  <button onclick="window.close()" style="margin-top: 20px; padding: 10px 20px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer;">Close Window</button>
+                </div>
+              </body>
+            </html>
+          `);
+          if (oauthServerRejecter) {
+            oauthServerRejecter(new Error(error));
+          }
+          return;
+        }
+
+        if (!code || !state) {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Missing code or state");
+          return;
+        }
+
+        try {
+          // Try both providers since we don't know which one
+          let tokens;
+          try {
+            tokens = await exchangeCode("antigravity", code, state);
+          } catch {
+            tokens = await exchangeCode("gemini_cli", code, state);
+          }
+
+          res.writeHead(200, { "Content-Type": "text/html" });
+          res.end(`
+            <html>
+              <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #0f172a; color: white;">
+                <div style="text-align: center;">
+                  <h1 style="color: #22c55e;">Authentication Successful!</h1>
+                  <p>You can close this window and return to the terminal.</p>
+                  <script>setTimeout(() => window.close(), 2000)</script>
+                </div>
+              </body>
+            </html>
+          `);
+
+          if (oauthServerResolver) {
+            oauthServerResolver(tokens);
+          }
+        } catch (e) {
+          res.writeHead(500, { "Content-Type": "text/html" });
+          res.end(`
+            <html>
+              <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; background: #0f172a; color: white;">
+                <div style="text-align: center;">
+                  <h1 style="color: #ef4444;">Authentication Failed</h1>
+                  <p>${e.message}</p>
+                  <button onclick="window.close()" style="margin-top: 20px; padding: 10px 20px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer;">Close Window</button>
+                </div>
+              </body>
+            </html>
+          `);
+          if (oauthServerRejecter) {
+            oauthServerRejecter(e);
+          }
+        }
+      } else {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Not Found");
+      }
+    });
+
+    oauthServer.on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        // Port already in use - server might be running
+        reject(
+          new Error(
+            "Port 7536 is already in use. Is the GemiNitro server running? Stop it first or use web-based authentication.",
+          ),
+        );
+      } else {
+        reject(err);
+      }
+      oauthServer = null;
+      oauthServerResolver = null;
+      oauthServerRejecter = null;
+    });
+
+    oauthServer.listen(OAUTH_CALLBACK_PORT, () => {
+      console.log(`OAuth server listening on http://localhost:${OAUTH_CALLBACK_PORT}`);
+    });
+  });
+}
+
+// Stop the OAuth server
+async function stopOAuthServer() {
+  if (oauthServer) {
+    return new Promise((resolve) => {
+      oauthServer.close(() => {
+        oauthServer = null;
+        oauthServerResolver = null;
+        oauthServerRejecter = null;
+        resolve();
+      });
+    });
+  }
+}
 
 // PKCE helpers
 function base64urlEncode(buffer) {
@@ -172,133 +317,15 @@ async function exchangeCode(providerName, code, state) {
   };
 }
 
-// OAuth callback server - returns promise that resolves when OAuth completes
-let oauthResolve = null;
-let oauthReject = null;
-
-function startOAuthServer() {
-  return new Promise((resolve, reject) => {
-    oauthResolve = resolve;
-    oauthReject = reject;
-
-    if (oauthServer) {
-      // Server already running
-      resolve({ alreadyRunning: true });
-      return;
+// Cleaning up pending verifiers older than 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const state in pending_verifiers) {
+    if (now - pending_verifiers[state].createdAt > 10 * 60 * 1000) {
+      delete pending_verifiers[state];
     }
-
-    oauthServer = http.createServer(async (req, res) => {
-      const parsedUrl = new url.URL(req.url, `http://localhost:${config.PORT}`);
-      const pathname = parsedUrl.pathname;
-
-      if (pathname === "/oauth-callback") {
-        const code = parsedUrl.searchParams.get("code");
-        const state = parsedUrl.searchParams.get("state");
-        const error = parsedUrl.searchParams.get("error");
-
-        if (error) {
-          res.writeHead(400, { "Content-Type": "text/html" });
-          res.end(`
-            <html>
-              <body>
-                <h1>Authentication Failed</h1>
-                <p>Error: ${error}</p>
-                <script>window.close()</script>
-              </body>
-            </html>
-          `);
-          if (oauthReject) oauthReject(new Error(error));
-          return;
-        }
-
-        if (!code || !state) {
-          res.writeHead(400, { "Content-Type": "text/html" });
-          res.end(`
-            <html>
-              <body>
-                <h1>Missing Parameters</h1>
-                <p>Authorization code or state missing.</p>
-                <script>window.close()</script>
-              </body>
-            </html>
-          `);
-          if (oauthReject) oauthReject(new Error("Missing code or state"));
-          return;
-        }
-
-        // Find the pending verifier
-        const pending = pending_verifiers[state];
-        if (!pending) {
-          res.writeHead(400, { "Content-Type": "text/html" });
-          res.end(`
-            <html>
-              <body>
-                <h1>Invalid State</h1>
-                <p>State parameter not found or expired.</p>
-                <script>window.close()</script>
-              </body>
-            </html>
-          `);
-          if (oauthReject) oauthReject(new Error("Invalid state"));
-          return;
-        }
-
-        try {
-          const tokens = await exchangeCode(pending.provider, code, state);
-          res.writeHead(200, { "Content-Type": "text/html" });
-          res.end(`
-            <html>
-              <body>
-                <h1>Authentication Successful!</h1>
-                <p>You can close this window and return to the terminal.</p>
-                <script>setTimeout(() => window.close(), 2000)</script>
-              </body>
-            </html>
-          `);
-          if (oauthResolve) oauthResolve(tokens);
-        } catch (err) {
-          res.writeHead(400, { "Content-Type": "text/html" });
-          res.end(`
-            <html>
-              <body>
-                <h1>Authentication Failed</h1>
-                <p>${err.message}</p>
-                <script>window.close()</script>
-              </body>
-            </html>
-          `);
-          if (oauthReject) oauthReject(err);
-        }
-      } else {
-        res.writeHead(404);
-        res.end("Not found");
-      }
-    });
-
-    oauthServer.on("error", (err) => {
-      oauthServer = null;
-      reject(err);
-    });
-
-    oauthServer.listen(config.PORT, () => {
-      // Server started - don't resolve promise yet.
-      // It will resolve when oauthResolve() is called from the callback.
-    });
-  });
-}
-
-function stopOAuthServer() {
-  return new Promise((resolve) => {
-    if (oauthServer) {
-      oauthServer.close(() => {
-        oauthServer = null;
-        resolve();
-      });
-    } else {
-      resolve();
-    }
-  });
-}
+  }
+}, 60 * 1000);
 
 function getOAuthClient(providerName) {
   return OAUTH_CLIENTS[providerName] || null;
@@ -357,10 +384,10 @@ async function getAccessTokenFromRefreshToken(refreshToken, providerName = "anti
 module.exports = {
   generateAuthUrl,
   exchangeCode,
-  startOAuthServer,
-  stopOAuthServer,
   getOAuthClient,
   getAvailableProviders,
   getAccessTokenFromRefreshToken,
+  startOAuthServer,
+  stopOAuthServer,
   OAUTH_CLIENTS,
 };
