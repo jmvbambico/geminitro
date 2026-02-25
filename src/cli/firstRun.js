@@ -142,27 +142,6 @@ const promptSetupMethod = async (message) => {
   });
 };
 
-const promptSetupMethodWithPreference = async (message) => {
-  const chalk = require("chalk");
-  const { confirm } = require("@inquirer/prompts");
-  const method = await promptSetupMethod(message);
-
-  if (method !== "skip") {
-    const remember = await confirm({
-      message: "Remember this choice? (Never ask again)",
-      default: false,
-    });
-
-    if (remember) {
-      const install = require("../cli/install");
-      install.writeEnvValue("SETUP_METHOD", method);
-      console.log(chalk.green(`  ✓ Preference saved to .env\n`));
-    }
-  }
-
-  return method;
-};
-
 const getSetupState = async () => {
   const config = require("../../config");
 
@@ -216,8 +195,7 @@ const run = async (options = {}) => {
   if (!setupState.hasKeys) {
     console.log(chalk.yellow("\n  ⚠  No API keys configured.\n"));
 
-    const method =
-      savedMethod || (await promptSetupMethodWithPreference("Add your first Gemini API key via:"));
+    const method = savedMethod || (await promptSetupMethod("Add your first Gemini API key via:"));
 
     if (method === "browser") {
       await openBrowserSetup("/dashboard/setup");
@@ -328,8 +306,7 @@ const run = async (options = {}) => {
     );
 
     const method =
-      savedMethod ||
-      (await promptSetupMethodWithPreference("Register GemiNitro with coding agents via:"));
+      savedMethod || (await promptSetupMethod("Register GemiNitro with coding agents via:"));
 
     if (method === "browser") {
       await openBrowserSetup("/dashboard/setup?skip_key=true");
@@ -343,6 +320,32 @@ const run = async (options = {}) => {
   }
 
   // ========== Phase 3: Ready ==========
+  // Ask for preference if not already set
+  if (!savedMethod) {
+    const { confirm } = require("@inquirer/prompts");
+
+    console.log(chalk.green("\n  ✓ Setup complete!\n"));
+
+    const remember = await confirm({
+      message: "Remember your browser/terminal preference for future runs?",
+      default: false,
+    });
+
+    if (remember) {
+      const prefChoice = await select({
+        message: "Which interface do you prefer for future runs?",
+        choices: [
+          { name: "Browser — always open dashboard", value: "browser" },
+          { name: "Terminal — always use CLI", value: "terminal" },
+        ],
+      });
+
+      const install = require("./install");
+      install.writeEnvValue("SETUP_METHOD", prefChoice);
+      console.log(chalk.green(`  ✓ Preference saved to .env\n`));
+    }
+  }
+
   const finalChoice =
     savedMethod === "browser"
       ? "browser"

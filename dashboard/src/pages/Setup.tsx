@@ -498,10 +498,10 @@ export function Setup() {
               </label>
             </div>
 
-            <h3 className="text-sm font-medium mb-3">Setup flow preference</h3>
+            <h3 className="text-sm font-medium mb-3">Interface preference</h3>
             <p className="text-xs text-muted-foreground mb-2">
-              How should <code className="bg-muted px-1 rounded">geminitro start</code> handle
-              future setup screens?
+              Choose your preferred interface for{" "}
+              <code className="bg-muted px-1 rounded">geminitro start</code>
             </p>
             <div className="space-y-2 mb-4">
               <label className="flex items-center gap-3 p-3 rounded-lg border border-input bg-background cursor-pointer hover:border-primary">
@@ -513,9 +513,9 @@ export function Setup() {
                   className="w-4 h-4"
                 />
                 <div className="text-sm">
-                  <div className="font-medium">Always use browser wizard</div>
+                  <div className="font-medium">Always use browser</div>
                   <div className="text-muted-foreground text-xs">
-                    Open dashboard for all setup tasks
+                    Open dashboard automatically when running geminitro
                   </div>
                 </div>
               </label>
@@ -531,7 +531,7 @@ export function Setup() {
                 <div className="text-sm">
                   <div className="font-medium">Always use terminal</div>
                   <div className="text-muted-foreground text-xs">
-                    Use interactive CLI for setup tasks
+                    Use interactive CLI when running geminitro
                   </div>
                 </div>
               </label>

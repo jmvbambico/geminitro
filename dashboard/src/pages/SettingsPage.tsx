@@ -57,9 +57,9 @@ export function Settings() {
       </div>
 
       <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-        <h2 className="text-sm font-medium">Setup Flow Preference</h2>
+        <h2 className="text-sm font-medium">Interface Preference</h2>
         <p className="text-xs text-muted-foreground">
-          Choose how to handle setup screens when running{" "}
+          Choose your preferred interface when running{" "}
           <code className="bg-muted px-1 rounded">geminitro start</code>
         </p>
 
@@ -75,7 +75,7 @@ export function Settings() {
             <div>
               <div className="font-medium text-sm">Browser (Recommended)</div>
               <div className="text-xs text-muted-foreground">
-                Always open dashboard wizard for setup tasks
+                Always open dashboard automatically
               </div>
             </div>
           </label>
@@ -90,9 +90,7 @@ export function Settings() {
             />
             <div>
               <div className="font-medium text-sm">Terminal</div>
-              <div className="text-xs text-muted-foreground">
-                Use interactive CLI for setup tasks
-              </div>
+              <div className="text-xs text-muted-foreground">Always use interactive CLI</div>
             </div>
           </label>
 

@@ -240,7 +240,6 @@ export function Overview({
         return next;
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logs, verboseLogging]);
 
   useEffect(() => {
