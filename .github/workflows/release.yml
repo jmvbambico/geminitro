@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for changelog generation
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build dashboard
+        run: npm run build
+
+      - name: Get tag message
+        id: tag
+        run: |
+          TAG_MESSAGE=$(git tag -l --format='%(contents)' ${GITHUB_REF#refs/tags/})
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAG_MESSAGE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog from commits
+        id: changelog
+        run: |
+          # Get previous tag
+          PREVIOUS_TAG=$(git tag --sort=-v:refname | grep -A1 ${GITHUB_REF#refs/tags/} | tail -1)
+
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "changelog=First release" >> $GITHUB_OUTPUT
+          else
+            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            git log ${PREVIOUS_TAG}..${GITHUB_REF#refs/tags/} --pretty=format:"- %s (%h)" --no-merges >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ steps.tag.outputs.version }}
+          body: |
+            ${{ steps.tag.outputs.message }}
+
+            ## Commits
+            ${{ steps.changelog.outputs.changelog }}
+
+            ## Installation
+            ```bash
+            npm install -g geminitro@${{ steps.tag.outputs.version }}
+            ```
+
+            Or update existing installation:
+            ```bash
+            npm update -g geminitro
+            ```
+          draft: false
+          prerelease: false
+          generate_release_notes: false
