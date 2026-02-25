@@ -577,15 +577,36 @@ function convertContentToParts(content) {
   return [{ text: String(content) }];
 }
 
+const ALLOWED_SCHEMA_KEYS = [
+  "type",
+  "format",
+  "description",
+  "nullable",
+  "enum",
+  "items",
+  "properties",
+  "required",
+  "example",
+  "minItems",
+  "maxItems",
+  "minProperties",
+  "maxProperties",
+  "minLength",
+  "maxLength",
+  "minimum",
+  "maximum",
+  "multipleOf",
+];
+
 function sanitizeToolParameters(params) {
   if (!params || typeof params !== "object") return params;
   if (Array.isArray(params)) return params.map(sanitizeToolParameters);
 
   const out = {};
   for (const [k, v] of Object.entries(params)) {
-    // Gemini's JSON schema subset rejects these keys
-    if (["$schema", "const", "default", "pattern"].includes(k)) continue;
-    out[k] = sanitizeToolParameters(v);
+    if (ALLOWED_SCHEMA_KEYS.includes(k)) {
+      out[k] = sanitizeToolParameters(v);
+    }
   }
   return out;
 }
