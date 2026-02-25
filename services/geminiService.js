@@ -109,7 +109,8 @@ const sanitizeToolParameters = (params) => {
 
   const out = {};
   for (const [k, v] of Object.entries(params)) {
-    if (k === "$schema") continue;
+    // Gemini's JSON schema subset rejects these keys
+    if (["$schema", "const", "default", "pattern"].includes(k)) continue;
     out[k] = sanitizeToolParameters(v);
   }
   return out;
