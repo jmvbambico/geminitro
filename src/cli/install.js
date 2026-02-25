@@ -635,8 +635,9 @@ const run = async (agent = "opencode") => {
   else if (agent === "opencrabs") await installOpenCrabs(models, PORT, PROXY_API_KEY, chalk);
   else if (agent === "kimi-code") await installKimiCode(models, PORT, PROXY_API_KEY, chalk);
 
+  console.log(""); // Spacing
   const autoStart = await select({
-    message: "\n  Auto-start GemiNitro on login",
+    message: "Auto-start GemiNitro on login",
     choices: [
       { name: "No — I will run `geminitro start` manually", value: "none" },
       { name: "macOS — Install launchd service (recommended for Mac)", value: "launchd" },
@@ -654,8 +655,9 @@ const run = async (agent = "opencode") => {
     console.log(chalk[result.ok ? "green" : "yellow"](`\n  ✓ ${result.msg}`));
   }
 
+  console.log(""); // Spacing
   const autoUpdate = await select({
-    message: "\n  Enable auto-update (checks for new releases on start)",
+    message: "Enable auto-update (checks for new releases on start)",
     choices: [
       { name: "No — I will run `geminitro update` manually", value: false },
       { name: "Yes — apply updates automatically on startup", value: true },
@@ -732,8 +734,9 @@ const runInteractive = async () => {
   }
 
   // Auto-start prompt (only once)
+  console.log(""); // Spacing
   const autoStart = await select({
-    message: "\n  Auto-start GemiNitro on login",
+    message: "Auto-start GemiNitro on login",
     choices: [
       { name: "No — I will run `geminitro start` manually", value: "none" },
       { name: "macOS — Install launchd service (recommended for Mac)", value: "launchd" },
@@ -752,8 +755,9 @@ const runInteractive = async () => {
   }
 
   // Auto-update prompt
+  console.log(""); // Spacing
   const autoUpdate = await select({
-    message: "\n  Enable auto-update (checks for new releases on start)",
+    message: "Enable auto-update (checks for new releases on start)",
     choices: [
       { name: "No — I will run `geminitro update` manually", value: false },
       { name: "Yes — apply updates automatically on startup", value: true },
