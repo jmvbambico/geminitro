@@ -263,7 +263,7 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
                 </td>
                 <td className="px-4 py-3">
                   {k.type === "oauth" ? (
-                    k.source === "gemini-cli" ? (
+                    k.source === "gemini_cli" ? (
                       <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium text-green-500 bg-green-500/10">
                         <img
                           src="/gemini.webp"

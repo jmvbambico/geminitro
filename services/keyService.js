@@ -38,6 +38,7 @@ const loadKeys = () => {
       const keyStr = typeof k === "string" ? k : k.key;
       const existing = existingKeysMap.get(keyStr);
       const keyType = typeof k === "object" ? k.type || "api_key" : "api_key";
+      const keySource = typeof k === "object" ? k.source || null : null;
       const keySupportedModels = Array.isArray(k?.supportedModels) ? k.supportedModels : [];
 
       // Migration: if OAuth key has empty supportedModels but models.json has models,
@@ -52,6 +53,7 @@ const loadKeys = () => {
           key: keyStr,
           type: keyType,
           email: typeof k === "object" ? k.email : null,
+          source: keySource,
           status: "active",
           usage: 0,
           errors: 0,
@@ -87,15 +89,16 @@ const loadKeys = () => {
   }
 };
 
-const saveKeys = async () => {
+const saveKeys = () => {
   try {
-    await fs.promises.writeFile(
+    fs.writeFileSync(
       config.KEY_FILE,
       JSON.stringify(
         keyPool.map((k) => ({
           key: k.key,
           type: k.type,
           email: k.email || null,
+          source: k.source || null,
           supportedModels: k.supportedModels || [],
         })),
         null,
@@ -185,12 +188,13 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
 };
 
 const addKey = (key, options = {}) => {
-  const { type = "api_key", email = null, models = [] } = options;
+  const { type = "api_key", email = null, models = [], source = null } = options;
   if (key && !keyPool.find((k) => k.key === key)) {
     keyPool.push({
       key,
       type,
       email,
+      source,
       status: "active",
       usage: 0,
       errors: 0,
@@ -261,7 +265,7 @@ const addOAuthToken = async (refreshToken, provider, email = null) => {
       lastUsed: 0,
       supportedModels,
     });
-    await saveKeys();
+    saveKeys();
     return { success: true, models: supportedModels, modelsUpdated };
   }
   return { success: false, models: [] };
@@ -356,7 +360,7 @@ const detectAntigravityAccounts = () => {
         key: a.refreshToken,
         type: "oauth",
         email: a.email || null,
-        source: "opencode-antigravity",
+        source: "antigravity",
         projectId: a.projectId || null,
       }));
   } catch (e) {
@@ -441,7 +445,7 @@ const importAntigravityAccounts = async () => {
   }
 
   if (imported > 0) {
-    await saveKeys();
+    saveKeys();
     logger.info(`Imported ${imported} antigravity accounts, skipped ${skipped} duplicates`);
   }
 
@@ -476,7 +480,7 @@ const detectGeminiCliAccounts = () => {
         key: data.refresh_token,
         type: "oauth",
         email: email,
-        source: "gemini-cli",
+        source: "gemini_cli",
       },
     ];
   } catch (e) {
@@ -495,7 +499,7 @@ const importGeminiCliAccounts = async () => {
 
   for (const account of accounts) {
     // Check if already exists (by refresh token and source)
-    const exists = keyPool.find((k) => k.key === account.key && k.source === "gemini-cli");
+    const exists = keyPool.find((k) => k.key === account.key && k.source === "gemini_cli");
     if (exists) {
       skipped++;
       continue;
@@ -533,7 +537,7 @@ const importGeminiCliAccounts = async () => {
   }
 
   if (imported > 0) {
-    await saveKeys();
+    saveKeys();
     logger.info(`Imported ${imported} Gemini CLI accounts, skipped ${skipped} duplicates`);
   }
 
