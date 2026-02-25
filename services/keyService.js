@@ -108,24 +108,23 @@ const saveKeys = async () => {
 };
 
 const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) => {
-  // First: try to find an active key that supports the requested model (if provided)
   let bestKey = null;
   let minUsage = Infinity;
 
-  const byModel = (k) => {
-    const supports = Array.isArray(k.supportedModels) ? k.supportedModels : [];
-    return desiredModel ? supports.includes(desiredModel) : true;
-  };
+  const byType = (k) => (keyType ? k.type === keyType : true);
 
-  const byType = (k) => {
-    return keyType ? k.type === keyType : true;
-  };
-
-  // Practical: prefer active keys that support the desired model
-  const matchingActive = keyPool.filter(
-    (k) => k.status === "active" && !excludeKeys.includes(k.key) && byModel(k) && byType(k),
+  // 1. First Pass: Try to find an active key that EXPLICITLY supports the requested model
+  const explicitMatch = keyPool.filter(
+    (k) =>
+      k.status === "active" &&
+      !excludeKeys.includes(k.key) &&
+      byType(k) &&
+      desiredModel &&
+      Array.isArray(k.supportedModels) &&
+      k.supportedModels.includes(desiredModel),
   );
-  for (const k of matchingActive) {
+
+  for (const k of explicitMatch) {
     if (k.usage < minUsage) {
       minUsage = k.usage;
       bestKey = k;
@@ -133,11 +132,19 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
   }
   if (bestKey) return bestKey;
 
-  // If no matching active key, fallback to any active key (ignore model but respect type)
-  const fallbackActive = keyPool.filter(
-    (k) => k.status === "active" && !excludeKeys.includes(k.key) && byType(k),
+  // 2. Second Pass: Try to find an active key with UNKNOWN support (supportedModels is empty)
+  // This is typical for standard API keys or newly added keys before discovery.
+  // BUT: If a'desiredModel' was specified, we only fallback to these "unknown" keys.
+  // We NEVER fallback to a key that has a non-empty list which excludes the model.
+  const unknownMatch = keyPool.filter(
+    (k) =>
+      k.status === "active" &&
+      !excludeKeys.includes(k.key) &&
+      byType(k) &&
+      (!Array.isArray(k.supportedModels) || k.supportedModels.length === 0),
   );
-  for (const k of fallbackActive) {
+
+  for (const k of unknownMatch) {
     if (k.usage < minUsage) {
       minUsage = k.usage;
       bestKey = k;
@@ -145,7 +152,21 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
   }
   if (bestKey) return bestKey;
 
-  // If no active keys, try to recover a cooldown key
+  // 3. Special Case: If NO desiredModel was specified, we can return any active key of the right type
+  if (!desiredModel) {
+    const anyActive = keyPool.filter(
+      (k) => k.status === "active" && !excludeKeys.includes(k.key) && byType(k),
+    );
+    for (const k of anyActive) {
+      if (k.usage < minUsage) {
+        minUsage = k.usage;
+        bestKey = k;
+      }
+    }
+    if (bestKey) return bestKey;
+  }
+
+  // 4. Cooldown Recovery: If no active keys, try to recover a cooldown key
   const now = Date.now();
   const recoveredKey = keyPool.find(
     (k) =>
@@ -160,7 +181,6 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
     return recoveredKey;
   }
 
-  // No suitable key found
   return null;
 };
 
