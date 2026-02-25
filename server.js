@@ -65,9 +65,9 @@ app.use((req, res, next) => {
 });
 
 try {
+  statsService.initialize();
   keyService.loadKeys();
   geminiService.initializeModelFetching();
-  statsService.initialize();
 } catch (error) {
   console.error("Failed to initialize services:", error);
   process.exit(1);
@@ -88,6 +88,13 @@ if (!fs.existsSync(dashboardPath)) {
 
 // Serve built dashboard at /dashboard
 if (fs.existsSync(dashboardPath)) {
+  // Explicitly serve static assets at the root level before any API routes
+  app.use(
+    express.static(dashboardPath, {
+      index: false,
+      extensions: ["html", "htm", "webp", "svg", "png", "jpg"],
+    }),
+  );
   app.use("/dashboard", express.static(dashboardPath));
   // SPA fallback — send index.html for any /dashboard/* route not matched as a file
   app.get(/^\/dashboard(\/.*)?$/, (req, res) => {

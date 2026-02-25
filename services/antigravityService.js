@@ -473,8 +473,17 @@ async function generateContentAntigravity(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error?.message || `Antigravity API error: ${response.status}`);
+    const errorText = await response.text();
+    let errorObj;
+    try {
+      errorObj = JSON.parse(errorText);
+      throw new Error(
+        errorObj.error?.message ||
+          `Antigravity API error ${response.status}: ${JSON.stringify(errorObj)}`,
+      );
+    } catch {
+      throw new Error(errorText || `Antigravity API error: ${response.status}`);
+    }
   }
 
   if (stream) {
@@ -494,7 +503,6 @@ async function generateContentAntigravity(
                 if (!jsonStr) continue;
                 let data = JSON.parse(jsonStr);
 
-                // Internal Antigravity API wraps the response in a 'response' field
                 if (data.response) {
                   data = data.response;
                 }
@@ -504,14 +512,12 @@ async function generateContentAntigravity(
                     if (data.candidates && data.candidates[0] && data.candidates[0].content) {
                       return data.candidates[0].content.parts
                         .map((p) => {
-                          // Extract text from standard parts; skip thought/thinking parts
                           if (p.thought) return "";
                           return p.text || "";
                         })
                         .join("");
                     }
                     if (data.content && Array.isArray(data.content)) {
-                      // Anthropic-style content array — filter out thinking blocks
                       return data.content
                         .filter((p) => p.type !== "thinking")
                         .map((p) => p.text || "")
@@ -523,18 +529,58 @@ async function generateContentAntigravity(
                     data.candidates?.[0]?.content?.parts
                       ?.filter((p) => p.functionCall)
                       .map((p) => p.functionCall) || [],
-                  // Expose usage metadata so the proxy can emit OpenAI-format usage stats
                   usageMetadata: data.usageMetadata || null,
                 };
               } catch {}
+            } else if (
+              line.trim() &&
+              !line.startsWith("event:") &&
+              !line.startsWith("id:") &&
+              !line.startsWith("retry:") &&
+              !line.startsWith(":")
+            ) {
+              // Yield plaintext uninterpreted inference response
+              yield {
+                text: () => line + "\n",
+                functionCalls: [],
+                usageMetadata: null,
+              };
             }
           }
+        }
+        if (
+          buffer.trim() &&
+          !buffer.startsWith("data:") &&
+          !buffer.startsWith("event:") &&
+          !buffer.startsWith("id:") &&
+          !buffer.startsWith("retry:") &&
+          !buffer.startsWith(":")
+        ) {
+          // yield any remaining uninterpreted text
+          yield {
+            text: () => buffer + "\n",
+            functionCalls: [],
+            usageMetadata: null,
+          };
         }
       })(),
     };
   }
 
-  let data = await response.json();
+  const rawText = await response.text();
+  let data;
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    // Plaintext uninterpreted inference response fallback
+    return {
+      response: {
+        text: () => rawText,
+        functionCalls: [],
+        usageMetadata: null,
+      },
+    };
+  }
   if (data.response) {
     data = data.response;
   }
@@ -604,8 +650,6 @@ const ALLOWED_SCHEMA_KEYS = [
   "multipleOf",
   "default",
   "pattern",
-  "const",
-  "anyOf",
   "oneOf",
   "allOf",
   "definitions",
@@ -618,11 +662,60 @@ function sanitizeToolParameters(params) {
 
   const out = {};
   for (const [k, v] of Object.entries(params)) {
-    if (ALLOWED_SCHEMA_KEYS.includes(k)) {
+    if (k === "properties" || k === "definitions") {
+      if (typeof v === "object" && v !== null && !Array.isArray(v)) {
+        out[k] = {};
+        for (const [propName, propSchema] of Object.entries(v)) {
+          out[k][propName] = sanitizeToolParameters(propSchema);
+        }
+      }
+    } else if (["default", "example", "enum", "required"].includes(k)) {
+      out[k] = v;
+    } else if (ALLOWED_SCHEMA_KEYS.includes(k)) {
       out[k] = sanitizeToolParameters(v);
     }
   }
   return out;
+}
+
+async function fetchGeminiCliModels(refreshToken, _email = null, provider = "gemini_cli") {
+  try {
+    const { accessToken } = await oauthService.getAccessTokenFromRefreshToken(
+      refreshToken,
+      provider,
+    );
+
+    const endpoint = ANTIGRAVITY_ENDPOINTS.daily;
+    const url = `${endpoint}/v1internal:retrieveUserQuota`;
+
+    const headers = {
+      ...DEFAULT_HEADERS,
+      Authorization: `Bearer ${accessToken}`,
+      Client_Metadata: getClientMetadata(),
+    };
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) return [];
+
+    const data = await response.json();
+    if (Array.isArray(data.buckets)) {
+      const models = [...new Set(data.buckets.map((b) => b.modelId).filter(Boolean))];
+      if (models.length > 0) {
+        logger.info(`Discovered ${models.length} models from retrieveUserQuota API`);
+      }
+      return models;
+    }
+
+    return [];
+  } catch (error) {
+    logger.warn(`fetchGeminiCliModels failed: ${error.message}`);
+    return [];
+  }
 }
 
 module.exports = {
@@ -630,6 +723,7 @@ module.exports = {
   getAntigravityModels,
   discoverProject,
   fetchAntigravityModels,
+  fetchGeminiCliModels,
   ANTIGRAVITY_ENDPOINTS,
   DEFAULT_ANTIGRAVITY_MODELS,
   sanitizeToolParameters,

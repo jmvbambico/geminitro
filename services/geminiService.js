@@ -124,8 +124,6 @@ const ALLOWED_SCHEMA_KEYS = [
   "multipleOf",
   "default",
   "pattern",
-  "const",
-  "anyOf",
   "oneOf",
   "allOf",
   "definitions",
@@ -138,7 +136,16 @@ const sanitizeToolParameters = (params) => {
 
   const out = {};
   for (const [k, v] of Object.entries(params)) {
-    if (ALLOWED_SCHEMA_KEYS.includes(k)) {
+    if (k === "properties" || k === "definitions") {
+      if (typeof v === "object" && v !== null && !Array.isArray(v)) {
+        out[k] = {};
+        for (const [propName, propSchema] of Object.entries(v)) {
+          out[k][propName] = sanitizeToolParameters(propSchema);
+        }
+      }
+    } else if (["default", "example", "enum", "required"].includes(k)) {
+      out[k] = v;
+    } else if (ALLOWED_SCHEMA_KEYS.includes(k)) {
       out[k] = sanitizeToolParameters(v);
     }
   }

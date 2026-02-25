@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { useDarkMode } from "@/hooks/useDarkMode";
-import { CheckCircle2, RefreshCw, Loader2, Key, Shield } from "lucide-react";
+import { CheckCircle2, RefreshCw, Loader2 } from "lucide-react";
 
 type Stage =
   | "idle"
@@ -227,7 +227,7 @@ export function Setup() {
               <div className="rounded-xl border border-border bg-card p-5 shadow-sm transition-all hover:shadow-md">
                 <div className="flex items-center gap-4 mb-4">
                   <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center">
-                    <Key className="w-5 h-5 text-purple-500" />
+                    <img src="/aistudio.webp" alt="AI Studio" className="w-5 h-5 object-contain" />
                   </div>
                   <div>
                     <h3 className="font-medium">Google AI Studio</h3>
@@ -264,7 +264,11 @@ export function Setup() {
                 className="flex items-center gap-4 p-5 rounded-xl border border-border bg-card text-left transition-all hover:border-primary hover:shadow-md disabled:opacity-50"
               >
                 <div className="w-10 h-10 rounded-full bg-cyan-500/10 flex items-center justify-center">
-                  <Shield className="w-5 h-5 text-cyan-500" />
+                  <img
+                    src="/antigravity.webp"
+                    alt="Antigravity"
+                    className="w-6 h-6 object-contain rounded-full"
+                  />
                 </div>
                 <div className="flex-1">
                   <h3 className="font-medium">Antigravity Account</h3>
@@ -280,19 +284,7 @@ export function Setup() {
                 className="flex items-center gap-4 p-5 rounded-xl border border-border bg-card text-left transition-all hover:border-primary hover:shadow-md disabled:opacity-50"
               >
                 <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center">
-                  <svg
-                    className="w-5 h-5 text-green-500"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-                    />
-                  </svg>
+                  <img src="/gemini.webp" alt="Gemini CLI" className="w-6 h-6 object-contain" />
                 </div>
                 <div className="flex-1">
                   <h3 className="font-medium">Gemini CLI Account</h3>

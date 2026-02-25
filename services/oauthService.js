@@ -4,28 +4,14 @@ const crypto = require("crypto");
 const http = require("http");
 const config = require("../config");
 
-// OAuth credentials - set in .env (gitignored)
-// Required: OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET
-
-// Get credentials from config (required - no defaults)
-const getOAuthClientId = () => {
-  const id = config.OAUTH_CLIENT_ID || process.env.OAUTH_CLIENT_ID;
-  if (!id) throw new Error("OAUTH_CLIENT_ID not configured - add to .env");
-  return id;
-};
-
-const getOAuthClientSecret = () => {
-  const secret = config.OAUTH_CLIENT_SECRET || process.env.OAUTH_CLIENT_SECRET;
-  if (!secret) throw new Error("OAUTH_CLIENT_SECRET not configured - add to .env");
-  return secret;
-};
-
 // OAuth client configurations
+// Credentials must be set via OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET in .env
+// See README for where to obtain these values
 const OAUTH_CLIENTS = {
   antigravity: {
-    clientId: getOAuthClientId(),
-    clientSecret: getOAuthClientSecret(),
-    redirectUri: "http://localhost:7536/oauth-callback",
+    clientId: config.OAUTH_CLIENT_ID,
+    clientSecret: config.OAUTH_CLIENT_SECRET,
+    redirectUri: `http://localhost:${config.PORT}/oauth-callback`,
     authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
     scopes: [
@@ -38,9 +24,9 @@ const OAUTH_CLIENTS = {
     provider: "antigravity",
   },
   gemini_cli: {
-    clientId: getOAuthClientId(),
-    clientSecret: getOAuthClientSecret(),
-    redirectUri: "http://localhost:7536/oauth-callback",
+    clientId: config.OAUTH_CLIENT_ID,
+    clientSecret: config.OAUTH_CLIENT_SECRET,
+    redirectUri: `http://localhost:${config.PORT}/oauth-callback`,
     authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
     scopes: [
@@ -59,7 +45,7 @@ let oauthServerResolver = null; // Resolves the startOAuthServer promise
 let oauthServerRejecter = null; // Rejects the startOAuthServer promise
 let pending_verifiers = {}; // { state: { verifier, provider, resolve, reject, timeout } }
 
-const OAUTH_CALLBACK_PORT = 7536;
+const OAUTH_CALLBACK_PORT = config.PORT;
 
 // Start a local OAuth server to receive the callback
 // This is used by CLI-based OAuth flows
@@ -163,7 +149,7 @@ function startOAuthServer() {
         // Port already in use - server might be running
         reject(
           new Error(
-            "Port 7536 is already in use. Is the GemiNitro server running? Stop it first or use web-based authentication.",
+            `Port ${config.PORT} is already in use. Is the GemiNitro server running? Stop it first or use web-based authentication.`,
           ),
         );
       } else {
@@ -216,6 +202,12 @@ function generateAuthUrl(providerName) {
   const client = OAUTH_CLIENTS[providerName];
   if (!client) {
     throw new Error(`Unknown OAuth provider: ${providerName}`);
+  }
+
+  if (!client.clientId || !client.clientSecret) {
+    throw new Error(
+      "OAuth not configured. Set OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET in .env — see README for details.",
+    );
   }
 
   const codeVerifier = generateCodeVerifier();
@@ -340,6 +332,12 @@ async function getAccessTokenFromRefreshToken(refreshToken, providerName = "anti
   const client = OAUTH_CLIENTS[providerName];
   if (!client) {
     throw new Error(`Unknown OAuth provider: ${providerName}`);
+  }
+
+  if (!client.clientId || !client.clientSecret) {
+    throw new Error(
+      "OAuth not configured. Set OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET in .env — see README for details.",
+    );
   }
 
   const tokenResponse = await fetch(client.tokenUrl, {

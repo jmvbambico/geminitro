@@ -35,8 +35,9 @@ module.exports = {
   ANTIGRAVITY_ENABLED: process.env.ANTIGRAVITY_ENABLED !== "false",
   ANTIGRAVITY_ACCOUNTS_FILE: path.join(opencodeConfigDir, "antigravity-accounts.json"),
   OPENCODE_CONFIG_DIR: opencodeConfigDir,
-  // OAuth credentials for Antigravity/Gemini CLI - MUST be set in .env
-  // These are public from OpenCode plugin but should not be in source
+  // OAuth credentials for Antigravity/Gemini CLI
+  // Required for OAuth account features. See README for how to obtain these.
+  // Set in .env (which is gitignored).
   OAUTH_CLIENT_ID: process.env.OAUTH_CLIENT_ID,
   OAUTH_CLIENT_SECRET: process.env.OAUTH_CLIENT_SECRET,
 };

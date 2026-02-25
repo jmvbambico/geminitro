@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import type { KeyEntry } from "@/hooks/useSocket";
-import { Trash2, Plus, RefreshCw, Shield, Key } from "lucide-react";
+import { Trash2, Plus, RefreshCw } from "lucide-react";
 
 const statusColors: Record<string, string> = {
   active: "text-green-500 bg-green-500/10",
@@ -132,17 +132,34 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
           <label className="block text-xs font-medium text-muted-foreground mb-1.5">
             Account Type
           </label>
-          <select
-            value={accountType}
-            onChange={(e) =>
-              setAccountType(e.target.value as "api_key" | "antigravity" | "gemini_cli")
-            }
-            className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            <option value="api_key">API Key (AIzaSy...)</option>
-            <option value="antigravity">Antigravity (Manual - Refresh Token)</option>
-            <option value="gemini_cli">Gemini CLI (Manual - Refresh Token)</option>
-          </select>
+          <div className="relative">
+            <select
+              value={accountType}
+              onChange={(e) =>
+                setAccountType(e.target.value as "api_key" | "antigravity" | "gemini_cli")
+              }
+              className="w-full pl-9 pr-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring appearance-none"
+            >
+              <option value="api_key">API Key (AIzaSy...)</option>
+              <option value="antigravity">Antigravity (Manual - Refresh Token)</option>
+              <option value="gemini_cli">Gemini CLI (Manual - Refresh Token)</option>
+            </select>
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none w-4 h-4">
+              {accountType === "api_key" && (
+                <img src="/aistudio.webp" alt="AI Studio" className="w-4 h-4 object-contain" />
+              )}
+              {accountType === "antigravity" && (
+                <img
+                  src="/antigravity.webp"
+                  alt="Antigravity"
+                  className="w-4 h-4 object-contain rounded-full"
+                />
+              )}
+              {accountType === "gemini_cli" && (
+                <img src="/gemini.webp" alt="Gemini CLI" className="w-4 h-4 object-contain" />
+              )}
+            </div>
+          </div>
         </div>
         <div className="flex gap-2 flex-wrap items-start">
           <div className="flex-1 flex flex-col gap-2 min-w-[300px]">
@@ -189,16 +206,20 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
               disabled={adding}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-600/10 text-cyan-600 dark:text-cyan-400 text-sm font-medium hover:bg-cyan-600/20 transition-colors disabled:opacity-50"
             >
-              <Shield className="w-4 h-4" />
-              Add Antigravity
+              <img
+                src="/antigravity.webp"
+                alt="Antigravity"
+                className="w-4 h-4 object-contain rounded-full"
+              />
+              Add
             </button>
             <button
               onClick={() => startOAuth("gemini_cli")}
               disabled={adding}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600/10 text-green-600 dark:text-green-400 text-sm font-medium hover:bg-green-600/20 transition-colors disabled:opacity-50"
             >
-              <Key className="w-4 h-4" />
-              Add Gemini CLI
+              <img src="/gemini.webp" alt="Gemini CLI" className="w-4 h-4 object-contain" />
+              Add
             </button>
             <button
               onClick={handleImport}
@@ -242,13 +263,32 @@ export function Keys({ keys }: { keys: KeyEntry[] }) {
                 </td>
                 <td className="px-4 py-3">
                   {k.type === "oauth" ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-cyan-500 bg-cyan-500/10">
-                      <Shield className="w-3 h-3" />
-                      Antigravity
-                    </span>
+                    k.source === "gemini-cli" ? (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium text-green-500 bg-green-500/10">
+                        <img
+                          src="/gemini.webp"
+                          alt="Gemini CLI"
+                          className="w-3.5 h-3.5 object-contain"
+                        />
+                        Gemini CLI
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium text-cyan-500 bg-cyan-500/10">
+                        <img
+                          src="/antigravity.webp"
+                          alt="Antigravity"
+                          className="w-4 h-4 object-contain rounded-full"
+                        />
+                        Antigravity
+                      </span>
+                    )
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-purple-500 bg-purple-500/10">
-                      <Key className="w-3 h-3" />
+                    <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium text-purple-500 bg-purple-500/10">
+                      <img
+                        src="/aistudio.webp"
+                        alt="AI Studio"
+                        className="w-3.5 h-3.5 object-contain"
+                      />
                       API Key
                     </span>
                   )}

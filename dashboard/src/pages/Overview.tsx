@@ -15,7 +15,7 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Copy, Check } from "lucide-react";
 import { AddKeyModal, Modal } from "@/components/Layout";
 
 const CHART_VAR_COUNT = 8;
@@ -104,7 +104,7 @@ function Switch({
   label: string;
 }) {
   return (
-    <label className="flex items-center gap-2 cursor-pointer">
+    <div className="flex items-center gap-2 cursor-pointer">
       <span className="text-xs text-muted-foreground">{label}</span>
       <button
         type="button"
@@ -121,7 +121,25 @@ function Switch({
           }`}
         />
       </button>
-    </label>
+    </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+      className="absolute top-2 right-4 p-1.5 rounded-md bg-muted/80 backdrop-blur-sm text-muted-foreground opacity-0 group-hover:opacity-100 transition-all hover:text-foreground hover:bg-muted border border-border/50 z-10 shadow-sm"
+      title="Copy to clipboard"
+    >
+      {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
   );
 }
 
@@ -136,7 +154,7 @@ export function Overview({
   trafficTick: number;
   fullStats: any;
 }) {
-  const { health, error } = useHealth();
+  const { error } = useHealth();
   const { chart: chartColors, semantic: sc } = useCssColors();
 
   const [addKeyOpen, setAddKeyOpen] = useState(false);
@@ -333,8 +351,6 @@ export function Overview({
 
   const pieData = modelEntries.map(([name, value]) => ({ name, value }));
 
-  const coolingKeys = keys.filter((k) => k.status === "cooldown");
-
   return (
     <div className="p-8 w-full space-y-8">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -363,20 +379,6 @@ export function Overview({
           sub={`over ${dailyEntries.length} day${dailyEntries.length !== 1 ? "s" : ""} `}
         />
       </div>
-
-      {coolingKeys.length > 0 && (
-        <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
-          <h2 className="text-base font-semibold mb-4">Keys on cooldown</h2>
-          <div className="space-y-2">
-            {health?.keys.cooldownKeys.map((k: { tail: string; remaining: number }) => (
-              <div key={k.tail} className="flex justify-between items-center text-sm">
-                <span className="font-mono text-muted-foreground">…{k.tail}</span>
-                <span className="text-yellow-500">{k.remaining}s remaining</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Row 2: Live Traffic Area Chart */}
       <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
@@ -619,18 +621,30 @@ export function Overview({
                 label="Health Checks"
               />
               <Switch checked={verboseLogging} onChange={handleVerboseChange} label="Verbose" />
+              {verboseLogging && (
+                <button
+                  onClick={() => {
+                    if (expandedLogs.size > 0) {
+                      setExpandedLogs(new Set());
+                    } else {
+                      const allVerboseLogIds = displayLogs
+                        .filter(
+                          (log) =>
+                            log.message.includes("Request:") || log.message.includes("Response:"),
+                        )
+                        .map((log) => log.id);
+                      setExpandedLogs(new Set(allVerboseLogIds));
+                    }
+                  }}
+                  className="w-6 h-6 flex items-center justify-center rounded bg-muted/50 border border-border text-muted-foreground hover:text-foreground hover:border-foreground transition-colors text-xs font-bold"
+                  title={expandedLogs.size > 0 ? "Collapse All" : "Expand All"}
+                >
+                  {expandedLogs.size > 0 ? "−" : "+"}
+                </button>
+              )}
             </div>
           </div>
           <div className="relative flex-1 min-h-0 overflow-hidden">
-            {verboseLogging && (
-              <button
-                onClick={() => setExpandedLogs(new Set())}
-                className="absolute -top-3 right-2 z-10 w-6 h-6 flex items-center justify-center rounded bg-card border border-border text-muted-foreground hover:text-foreground hover:border-foreground transition-colors text-xs font-bold"
-                title="Collapse All"
-              >
-                −
-              </button>
-            )}
             <div
               ref={logsContainerRef}
               className="h-full overflow-auto rounded-lg p-3 font-mono text-[10px] shadow-inner"
@@ -677,26 +691,29 @@ export function Overview({
                           [{log.type}]
                         </span>
                         <span style={{ color: msgColor }}>
-                          {isVerboseLog && <span className="mr-2">{isExpanded ? "▲" : "▼"}</span>}
+                          {isVerboseLog && <span className="mr-2">{isExpanded ? "▼" : "▲"}</span>}
                           {stripAnsi(log.message).split("\n")[0]}
                         </span>
                       </div>
                       {isVerboseLog && isExpanded && (
-                        <div
-                          className="px-8 py-1.5 text-[9px] space-y-0.5 overflow-y-auto"
-                          style={{
-                            color: "oklch(0.60 0.008 50)",
-                            maxHeight: "200px",
-                          }}
-                        >
-                          {stripAnsi(log.message)
-                            .split("\n")
-                            .slice(1)
-                            .map((line, i) => (
-                              <div key={i} className="whitespace-pre-wrap break-all">
-                                {line}
-                              </div>
-                            ))}
+                        <div className="relative group">
+                          <CopyButton text={stripAnsi(log.message)} />
+                          <div
+                            className="px-8 py-1.5 text-[9px] space-y-0.5 overflow-y-auto"
+                            style={{
+                              color: "oklch(0.60 0.008 50)",
+                              maxHeight: "200px",
+                            }}
+                          >
+                            {stripAnsi(log.message)
+                              .split("\n")
+                              .slice(1)
+                              .map((line, i) => (
+                                <div key={i} className="whitespace-pre-wrap break-all">
+                                  {line}
+                                </div>
+                              ))}
+                          </div>
                         </div>
                       )}
                     </div>

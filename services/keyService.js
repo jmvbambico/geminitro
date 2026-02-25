@@ -4,6 +4,7 @@ const path = require("path");
 const config = require("../config");
 const logger = require("../utils/logger");
 const antigravityService = require("./antigravityService");
+const statsService = require("./statsService");
 
 let keyPool = [];
 
@@ -59,6 +60,17 @@ const loadKeys = () => {
         }
       );
     });
+
+    // Restore per-key usage/errors from persisted history.json
+    const historyStats = statsService.getStats();
+    const keyUsage = historyStats.keyUsage || {};
+    for (const keyObj of keyPool) {
+      const persisted = keyUsage[keyObj.key];
+      if (persisted) {
+        keyObj.usage = persisted.requests || 0;
+        keyObj.errors = persisted.errors || 0;
+      }
+    }
 
     // Save migrated keys if any supportedModels were added
     const needsSave = keyPool.some(
@@ -176,8 +188,11 @@ const addOAuthToken = async (refreshToken, provider, email = null) => {
     // Discover models for this account - FAIL if no models found
     let supportedModels = [];
     try {
-      // Both Antigravity and Gemini CLI use the same cloudcode-pa endpoint
-      supportedModels = await antigravityService.fetchAntigravityModels(refreshToken, email);
+      if (provider === "gemini_cli") {
+        supportedModels = await antigravityService.fetchGeminiCliModels(refreshToken, email);
+      } else {
+        supportedModels = await antigravityService.fetchAntigravityModels(refreshToken, email);
+      }
       logger.info(`Discovered ${supportedModels.length} models for ${email || provider}`);
     } catch (error) {
       logger.warn(
@@ -469,7 +484,7 @@ const importGeminiCliAccounts = async () => {
     // Discover models for this account - use standard Gemini API for gemini-cli
     let supportedModels = [];
     try {
-      supportedModels = await antigravityService.fetchAntigravityModels(account.key, account.email);
+      supportedModels = await antigravityService.fetchGeminiCliModels(account.key, account.email);
       logger.info(
         `Discovered ${supportedModels.length} models for ${account.email || "gemini-cli"}`,
       );

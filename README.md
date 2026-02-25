@@ -262,6 +262,22 @@ geminitro key list           List all keys with status
 
 Set in `.env` or as environment variables. Copy `.env.example` to get started.
 
+### OAuth Setup (for Antigravity / Gemini CLI accounts)
+
+To use OAuth-based accounts (Antigravity or Gemini CLI), you need Google OAuth credentials. Add them to your `.env`:
+
+```
+OAUTH_CLIENT_ID=your-client-id-here
+OAUTH_CLIENT_SECRET=your-client-secret-here
+```
+
+**Where to get them:**
+
+1. **From the OpenCode Antigravity plugin** (easiest) — copy `ANTIGRAVITY_CLIENT_ID` and `ANTIGRAVITY_CLIENT_SECRET` from the plugin source at [`src/constants.ts`](https://github.com/NoeFabris/opencode-antigravity-auth/blob/main/src/constants.ts)
+2. **Create your own** — set up an OAuth 2.0 client at [Google Cloud Console](https://console.cloud.google.com/apis/credentials) with the `cloud-platform`, `userinfo.email`, and `userinfo.profile` scopes
+
+> OAuth credentials are only needed for Antigravity/Gemini CLI account features. Standard Gemini API keys from [AI Studio](https://aistudio.google.com) work without them.
+
 ---
 
 ## API Reference
@@ -304,6 +320,13 @@ The server starts on `:7536`. Dashboard source lives in `dashboard/` (Vite + Rea
 - **GitHub Actions** — lint, security audit, build (Node 18/20/22 matrix) on every push/PR
 - **Dependabot** — weekly npm updates, monthly GitHub Actions updates
 - **Pre-commit hooks** — ESLint + Prettier + npm audit on every commit
+
+---
+
+## Credits
+
+- **[KeyStream-Gemini](https://github.com/billtruong003/KeyStream-Gemini)** by billtruong003 — the original Gemini key-pooling proxy that inspired GemiNitro's core architecture: LRU key rotation, automatic cooldown recovery, and the OpenAI-compatible interface.
+- **[opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)** by NoeFabris — reverse-engineered the Antigravity OAuth flow and API spec that GemiNitro's OAuth service and Antigravity integration are built on.
 
 ---
 
