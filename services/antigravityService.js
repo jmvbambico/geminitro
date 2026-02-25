@@ -338,15 +338,17 @@ async function generateContentAntigravity(
     if (msg.role === "system") {
       const parts = convertContentToParts(msg.content);
       systemParts.push(...parts);
-    } else if (msg.role === "assistant") {
-      // Assistant messages may have text content AND/OR tool_calls.
-      const parts = [];
+      continue;
+    }
 
+    let geminiRole = "user";
+    let parts = [];
+
+    if (msg.role === "assistant") {
+      geminiRole = "model";
       if (msg.content) {
         parts.push(...convertContentToParts(msg.content));
       }
-
-      // OpenAI-format tool_calls → Gemini functionCall parts
       if (Array.isArray(msg.tool_calls)) {
         for (const tc of msg.tool_calls) {
           if (tc.type === "function") {
@@ -358,32 +360,29 @@ async function generateContentAntigravity(
           }
         }
       }
-
-      if (parts.length > 0) {
-        contents.push({ role: "model", parts });
-      }
     } else if (msg.role === "tool") {
-      // OpenAI tool result → Gemini functionResponse part
       let output = msg.content;
       try {
         output = JSON.parse(msg.content);
       } catch {}
-      contents.push({
-        role: "user",
-        parts: [
-          {
-            functionResponse: {
-              name: msg.name || msg.tool_call_id || "tool",
-              response: { output },
-            },
-          },
-        ],
+      parts.push({
+        functionResponse: {
+          name: msg.name || msg.tool_call_id || "tool",
+          response: { output },
+        },
       });
     } else {
       // user role
-      const parts = convertContentToParts(msg.content);
-      if (parts.length > 0) {
-        contents.push({ role: "user", parts });
+      parts = convertContentToParts(msg.content);
+    }
+
+    if (parts.length > 0) {
+      // Group consecutive messages with the same role into a single turn
+      const last = contents[contents.length - 1];
+      if (last && last.role === geminiRole) {
+        last.parts.push(...parts);
+      } else {
+        contents.push({ role: geminiRole, parts });
       }
     }
   }
