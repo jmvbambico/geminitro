@@ -11,8 +11,6 @@ import {
   EyeOff,
   X,
   Palette,
-  Key,
-  Shield,
 } from "lucide-react";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { useHealth } from "@/hooks/useHealth";
@@ -120,7 +118,7 @@ export function AddKeyModal({ open, onClose }: { open: boolean; onClose: () => v
         <div className="rounded-xl border border-border bg-muted/30 p-4">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center">
-              <Key className="w-4 h-4 text-purple-500" />
+              <img src="/aistudio.webp" alt="AI Studio" className="w-5 h-5 object-contain" />
             </div>
             <div>
               <h3 className="text-sm font-medium">Google AI Studio</h3>
@@ -161,7 +159,11 @@ export function AddKeyModal({ open, onClose }: { open: boolean; onClose: () => v
           className="w-full flex items-center gap-3 p-4 rounded-xl border border-border bg-muted/30 text-left transition-all hover:border-primary hover:shadow-sm disabled:opacity-50"
         >
           <div className="w-8 h-8 rounded-full bg-cyan-500/10 flex items-center justify-center">
-            <Shield className="w-4 h-4 text-cyan-500" />
+            <img
+              src="/antigravity.webp"
+              alt="Antigravity"
+              className="w-5 h-5 object-contain rounded-full"
+            />
           </div>
           <div className="flex-1">
             <h3 className="text-sm font-medium">Antigravity Account</h3>
@@ -176,7 +178,7 @@ export function AddKeyModal({ open, onClose }: { open: boolean; onClose: () => v
           className="w-full flex items-center gap-3 p-4 rounded-xl border border-border bg-muted/30 text-left transition-all hover:border-primary hover:shadow-sm disabled:opacity-50"
         >
           <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center">
-            <Key className="w-4 h-4 text-green-500" />
+            <img src="/gemini.webp" alt="Gemini CLI" className="w-5 h-5 object-contain" />
           </div>
           <div className="flex-1">
             <h3 className="text-sm font-medium">Gemini CLI Account</h3>

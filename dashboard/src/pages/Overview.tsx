@@ -548,7 +548,7 @@ export function Overview({
               onClick={() => setAddKeyOpen(true)}
               className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-lg font-medium flex items-center gap-1.5 hover:opacity-90 transition-opacity shadow-sm"
             >
-              <Plus className="w-3.5 h-3.5" /> Add Key
+              <Plus className="w-3.5 h-3.5" /> Add
             </button>
           </div>
 
