@@ -7,6 +7,15 @@ const cors = require("cors");
 const helmet = require("helmet");
 
 const config = require("./config");
+
+// Clean up old cache file (if exists)
+const oldCachePath = path.join(config.DATA_DIR, "antigravity-models.json");
+if (fs.existsSync(oldCachePath)) {
+  try {
+    fs.unlinkSync(oldCachePath);
+  } catch {}
+}
+
 const keyService = require("./services/keyService");
 const geminiService = require("./services/geminiService");
 const statsService = require("./services/statsService");
@@ -31,16 +40,34 @@ app.use(express.json({ limit: "50mb" }));
 
 app.use((req, res, next) => {
   const start = Date.now();
+  const reqBody = req.body;
+
+  // Capture response body for verbose logging
+  const originalJson = res.json.bind(res);
+  let resBody = null;
+
+  res.json = function (body) {
+    resBody = body;
+    return originalJson(body);
+  };
+
   res.on("finish", () => {
-    logger.http(req, res, Date.now() - start);
+    const duration = Date.now() - start;
+    logger.http(req, res, duration);
+
+    // Verbose logging with request/response bodies
+    if (config.VERBOSE_LOGGING) {
+      logger.httpVerbose(req, res, duration, reqBody, resBody);
+    }
   });
+
   next();
 });
 
 try {
+  statsService.initialize();
   keyService.loadKeys();
   geminiService.initializeModelFetching();
-  statsService.initialize();
 } catch (error) {
   console.error("Failed to initialize services:", error);
   process.exit(1);
@@ -61,6 +88,13 @@ if (!fs.existsSync(dashboardPath)) {
 
 // Serve built dashboard at /dashboard
 if (fs.existsSync(dashboardPath)) {
+  // Explicitly serve static assets at the root level before any API routes
+  app.use(
+    express.static(dashboardPath, {
+      index: false,
+      extensions: ["html", "htm", "webp", "svg", "png", "jpg"],
+    }),
+  );
   app.use("/dashboard", express.static(dashboardPath));
   // SPA fallback — send index.html for any /dashboard/* route not matched as a file
   app.get(/^\/dashboard(\/.*)?$/, (req, res) => {

@@ -15,8 +15,8 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { Trash2, Plus } from "lucide-react";
-import { AddKeyModal } from "@/components/Layout";
+import { Trash2, Plus, Copy, Check } from "lucide-react";
+import { AddKeyModal, Modal } from "@/components/Layout";
 
 const CHART_VAR_COUNT = 8;
 const SEMANTIC_VARS = [
@@ -85,6 +85,64 @@ const statusColors: Record<string, string> = {
 const stripAnsi = (str: string) =>
   str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
 
+const formatAccountType = (type: string, source: string | null) => {
+  if (type === "oauth") {
+    if (source === "antigravity") return "Antigravity";
+    if (source === "gemini_cli") return "Gemini CLI";
+    return "OAuth";
+  }
+  return "API Key";
+};
+
+function Switch({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 cursor-pointer">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+          checked ? "bg-primary" : "bg-muted"
+        }`}
+      >
+        <span
+          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-colors ${
+            checked ? "translate-x-5" : "translate-x-0.5"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+      className="absolute top-2 right-4 p-1.5 rounded-md bg-muted/80 backdrop-blur-sm text-muted-foreground opacity-0 group-hover:opacity-100 transition-all hover:text-foreground hover:bg-muted border border-border/50 z-10 shadow-sm"
+      title="Copy to clipboard"
+    >
+      {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
+  );
+}
+
 export function Overview({
   keys,
   logs,
@@ -96,11 +154,37 @@ export function Overview({
   trafficTick: number;
   fullStats: any;
 }) {
-  const { health, error } = useHealth();
+  const { error } = useHealth();
   const { chart: chartColors, semantic: sc } = useCssColors();
 
   const [addKeyOpen, setAddKeyOpen] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
+  const [keyToRemove, setKeyToRemove] = useState<{ tail: string; type: string } | null>(null);
+  const [verboseLogging, setVerboseLogging] = useState(() => {
+    const saved = localStorage.getItem("geminitro_verbose_logging");
+    return saved === "true";
+  });
+  const [showHealthChecks, setShowHealthChecks] = useState(() => {
+    const saved = localStorage.getItem("geminitro_show_health_checks");
+    return saved === null ? true : saved === "true";
+  });
+  const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
+  // Tracks IDs that have already been auto-expanded so the effect never fights
+  // with manual user collapses ("Collapse All" or per-item click).
+  const autoExpandedRef = useRef<Set<string>>(new Set());
+
+  // Sync verboseLogging from backend on mount
+  useEffect(() => {
+    api
+      .get("/api/settings")
+      .then((data: any) => {
+        if (typeof data?.verboseLogging === "boolean") {
+          setVerboseLogging(data.verboseLogging);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const [trafficHistory, setTrafficHistory] = useState<{ time: string; reqs: number }[]>([]);
   const latestTickRef = useRef(trafficTick);
@@ -112,6 +196,52 @@ export function Overview({
   useEffect(() => {
     // Stats are now managed by useSocket and passed via fullStats prop
   }, []);
+
+  // Persist verbose logging state and sync to backend
+  useEffect(() => {
+    localStorage.setItem("geminitro_verbose_logging", String(verboseLogging));
+  }, [verboseLogging]);
+
+  const handleVerboseChange = useCallback(async (enabled: boolean) => {
+    setVerboseLogging(enabled);
+    try {
+      await api.post("/api/settings/verbose", { enabled });
+    } catch {
+      // Silently ignore; the local UI state is still updated
+    }
+  }, []);
+
+  // Persist health checks state
+  useEffect(() => {
+    localStorage.setItem("geminitro_show_health_checks", String(showHealthChecks));
+  }, [showHealthChecks]);
+
+  // Auto-expand NEW verbose log entries only.
+  // Uses a ref to track which IDs have already been auto-expanded so that
+  // manual collapses (per-item click or "Collapse All") are never overridden.
+  useEffect(() => {
+    if (!verboseLogging) return;
+
+    const toExpand: string[] = [];
+    logs.forEach((log) => {
+      const isVerboseLog = log.message.includes("Request:") || log.message.includes("Response:");
+      if (isVerboseLog && !autoExpandedRef.current.has(log.id)) {
+        autoExpandedRef.current.add(log.id);
+        toExpand.push(log.id);
+      }
+    });
+
+    if (toExpand.length > 0) {
+      // Functional update: no stale closure on expandedLogs, so expandedLogs
+      // does NOT need to be in the dependency array.
+      setExpandedLogs((prev) => {
+        const next = new Set(prev);
+        toExpand.forEach((id) => next.add(id));
+        return next;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logs, verboseLogging]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -135,17 +265,46 @@ export function Overview({
     }
   }, [logs]);
 
-  const handleRemove = async (tail: string) => {
-    setRemoving(tail);
+  const handleRemoveClick = (tail: string, accountType: string) => {
+    setKeyToRemove({ tail, type: accountType });
+    setRemoveConfirmOpen(true);
+  };
+
+  const handleRemoveConfirm = async () => {
+    if (!keyToRemove) return;
+    setRemoving(keyToRemove.tail);
     try {
-      await api.delete(`/api/keys/${tail}`);
+      await api.delete(`/api/keys/${keyToRemove.tail}`);
     } catch {}
     setRemoving(null);
+    setRemoveConfirmOpen(false);
+    setKeyToRemove(null);
+  };
+
+  const handleRemoveCancel = () => {
+    setRemoveConfirmOpen(false);
+    setKeyToRemove(null);
+  };
+
+  const toggleLogExpanded = (logId: string) => {
+    setExpandedLogs((prev) => {
+      const next = new Set(prev);
+      if (next.has(logId)) {
+        next.delete(logId);
+      } else {
+        next.add(logId);
+      }
+      return next;
+    });
   };
 
   const displayLogs = useMemo(() => {
-    return [...logs].reverse();
-  }, [logs]);
+    let filtered = [...logs];
+    if (!showHealthChecks) {
+      filtered = filtered.filter((log) => !log.message.includes("/api/health"));
+    }
+    return filtered.reverse();
+  }, [logs, showHealthChecks]);
 
   if (error) {
     return (
@@ -192,8 +351,6 @@ export function Overview({
 
   const pieData = modelEntries.map(([name, value]) => ({ name, value }));
 
-  const coolingKeys = keys.filter((k) => k.status === "cooldown");
-
   return (
     <div className="p-8 w-full space-y-8">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -222,20 +379,6 @@ export function Overview({
           sub={`over ${dailyEntries.length} day${dailyEntries.length !== 1 ? "s" : ""} `}
         />
       </div>
-
-      {coolingKeys.length > 0 && (
-        <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
-          <h2 className="text-base font-semibold mb-4">Keys on cooldown</h2>
-          <div className="space-y-2">
-            {health?.keys.cooldownKeys.map((k: { tail: string; remaining: number }) => (
-              <div key={k.tail} className="flex justify-between items-center text-sm">
-                <span className="font-mono text-muted-foreground">…{k.tail}</span>
-                <span className="text-yellow-500">{k.remaining}s remaining</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Row 2: Live Traffic Area Chart */}
       <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
@@ -400,12 +543,12 @@ export function Overview({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="rounded-2xl border border-border/50 bg-card p-6 flex flex-col h-[450px] shadow-sm">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-base font-semibold">API Keys</h2>
+            <h2 className="text-base font-semibold">Accounts</h2>
             <button
               onClick={() => setAddKeyOpen(true)}
               className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-lg font-medium flex items-center gap-1.5 hover:opacity-90 transition-opacity shadow-sm"
             >
-              <Plus className="w-3.5 h-3.5" /> Add Key
+              <Plus className="w-3.5 h-3.5" /> Add
             </button>
           </div>
 
@@ -414,6 +557,7 @@ export function Overview({
               <thead className="sticky top-0 bg-card border-b border-border z-10">
                 <tr>
                   <th className="px-3 py-2 text-left text-muted-foreground font-medium">Key</th>
+                  <th className="px-3 py-2 text-left text-muted-foreground font-medium">Type</th>
                   <th className="px-3 py-2 text-left text-muted-foreground font-medium">Status</th>
                   <th className="px-3 py-2 text-right text-muted-foreground font-medium">Reqs</th>
                   <th className="px-3 py-2 text-right text-muted-foreground font-medium">Errs</th>
@@ -423,7 +567,7 @@ export function Overview({
               <tbody>
                 {keys.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">
+                    <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
                       No keys in pool.
                     </td>
                   </tr>
@@ -434,9 +578,12 @@ export function Overview({
                     className="border-b border-border last:border-0 hover:bg-muted/30"
                   >
                     <td className="px-3 py-2 font-mono">...{k.tail}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                      {formatAccountType(k.type, k.source)}
+                    </td>
                     <td className="px-3 py-2">
                       <span
-                        className={`inline - flex items - center px - 1.5 py - 0.5 rounded - full text - [10px] font - medium ${statusColors[k.status] ?? "text-muted-foreground bg-muted"} `}
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${statusColors[k.status] ?? "text-muted-foreground bg-muted"}`}
                       >
                         {k.status}
                       </span>
@@ -447,7 +594,9 @@ export function Overview({
                     </td>
                     <td className="px-3 py-2 text-right">
                       <button
-                        onClick={() => handleRemove(k.tail)}
+                        onClick={() =>
+                          handleRemoveClick(k.tail, formatAccountType(k.type, k.source))
+                        }
                         disabled={removing === k.tail}
                         title="Remove Key"
                         className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40"
@@ -463,49 +612,151 @@ export function Overview({
         </div>
 
         <div className="rounded-2xl border border-border/50 bg-card p-6 flex flex-col h-[450px] shadow-sm">
-          <h2 className="text-base font-semibold mb-6 shrink-0">System Logs</h2>
-          <div
-            ref={logsContainerRef}
-            className="flex-1 overflow-auto rounded-lg p-3 font-mono text-[10px] shadow-inner"
-            style={{
-              backgroundColor: "oklch(0.22 0.008 50)",
-              border: "1px solid oklch(0.30 0.008 50)",
-            }}
-          >
-            {displayLogs.length === 0 ? (
-              <div style={{ color: "oklch(0.45 0.008 50)" }} className="italic">
-                No logs yet...
-              </div>
-            ) : (
-              displayLogs.map((log, idx) => {
-                const msgColor = idx % 2 === 0 ? chartColors[0] : chartColors[1];
-                return (
-                  <div
-                    key={log.id}
-                    className="flex gap-2 py-0.5 px-1.5 rounded break-all"
-                    style={{
-                      backgroundColor: idx % 2 === 0 ? "oklch(0.25 0.008 50 / 0.6)" : "transparent",
-                    }}
-                  >
-                    <span
-                      className="shrink-0 tabular-nums"
-                      style={{ color: "oklch(0.45 0.008 50)" }}
+          <div className="flex items-center justify-between mb-6 shrink-0">
+            <h2 className="text-base font-semibold">System Logs</h2>
+            <div className="flex items-center gap-4">
+              <Switch
+                checked={showHealthChecks}
+                onChange={setShowHealthChecks}
+                label="Health Checks"
+              />
+              <Switch checked={verboseLogging} onChange={handleVerboseChange} label="Verbose" />
+              {verboseLogging && (
+                <button
+                  onClick={() => {
+                    if (expandedLogs.size > 0) {
+                      setExpandedLogs(new Set());
+                    } else {
+                      const allVerboseLogIds = displayLogs
+                        .filter(
+                          (log) =>
+                            log.message.includes("Request:") || log.message.includes("Response:"),
+                        )
+                        .map((log) => log.id);
+                      setExpandedLogs(new Set(allVerboseLogIds));
+                    }
+                  }}
+                  className="w-6 h-6 flex items-center justify-center rounded bg-muted/50 border border-border text-muted-foreground hover:text-foreground hover:border-foreground transition-colors text-xs font-bold"
+                  title={expandedLogs.size > 0 ? "Collapse All" : "Expand All"}
+                >
+                  {expandedLogs.size > 0 ? "−" : "+"}
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="relative flex-1 min-h-0 overflow-hidden">
+            <div
+              ref={logsContainerRef}
+              className="h-full overflow-auto rounded-lg p-3 font-mono text-[10px] shadow-inner"
+              style={{
+                backgroundColor: "oklch(0.22 0.008 50)",
+                border: "1px solid oklch(0.30 0.008 50)",
+              }}
+            >
+              {displayLogs.length === 0 ? (
+                <div style={{ color: "oklch(0.45 0.008 50)" }} className="italic">
+                  No logs yet...
+                </div>
+              ) : (
+                displayLogs.map((log, idx) => {
+                  const msgColor = idx % 2 === 0 ? chartColors[0] : chartColors[1];
+                  const isExpanded = expandedLogs.has(log.id);
+                  const isVerboseLog =
+                    verboseLogging &&
+                    (log.message.includes("Request:") || log.message.includes("Response:"));
+
+                  return (
+                    <div
+                      key={log.id}
+                      className="rounded break-all"
+                      style={{
+                        backgroundColor:
+                          idx % 2 === 0 ? "oklch(0.25 0.008 50 / 0.6)" : "transparent",
+                      }}
                     >
-                      {log.timestamp}
-                    </span>
-                    <span className="shrink-0 font-bold" style={{ color: "oklch(0.50 0.008 50)" }}>
-                      [{log.type}]
-                    </span>
-                    <span style={{ color: msgColor }}>{stripAnsi(log.message)}</span>
-                  </div>
-                );
-              })
-            )}
+                      <div
+                        className={`flex gap-2 py-0.5 px-1.5 ${isVerboseLog ? "cursor-pointer hover:bg-muted/20" : ""}`}
+                        onClick={() => isVerboseLog && toggleLogExpanded(log.id)}
+                      >
+                        <span
+                          className="shrink-0 tabular-nums"
+                          style={{ color: "oklch(0.45 0.008 50)" }}
+                        >
+                          {log.timestamp}
+                        </span>
+                        <span
+                          className="shrink-0 font-bold"
+                          style={{ color: "oklch(0.50 0.008 50)" }}
+                        >
+                          [{log.type}]
+                        </span>
+                        <span style={{ color: msgColor }}>
+                          {isVerboseLog && <span className="mr-2">{isExpanded ? "▼" : "▲"}</span>}
+                          {stripAnsi(log.message).split("\n")[0]}
+                        </span>
+                      </div>
+                      {isVerboseLog && isExpanded && (
+                        <div className="relative group">
+                          <CopyButton text={stripAnsi(log.message)} />
+                          <div
+                            className="px-8 py-1.5 text-[9px] space-y-0.5 overflow-y-auto"
+                            style={{
+                              color: "oklch(0.60 0.008 50)",
+                              maxHeight: "200px",
+                            }}
+                          >
+                            {stripAnsi(log.message)
+                              .split("\n")
+                              .slice(1)
+                              .map((line, i) => (
+                                <div key={i} className="whitespace-pre-wrap break-all">
+                                  {line}
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
       </div>
 
       <AddKeyModal open={addKeyOpen} onClose={() => setAddKeyOpen(false)} />
+
+      <Modal open={removeConfirmOpen} onClose={handleRemoveCancel} title="Remove Account">
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to remove this account?
+          </p>
+          {keyToRemove && (
+            <div className="rounded-lg bg-muted/50 p-3 space-y-1">
+              <div className="text-xs text-muted-foreground">Account Type</div>
+              <div className="font-medium">{keyToRemove.type}</div>
+              <div className="text-xs text-muted-foreground mt-2">Key</div>
+              <div className="font-mono text-sm">...{keyToRemove.tail}</div>
+            </div>
+          )}
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={handleRemoveCancel}
+              className="flex-1 px-4 py-2 rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors text-sm font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleRemoveConfirm}
+              disabled={removing === keyToRemove?.tail}
+              className="flex-1 px-4 py-2 rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors text-sm font-medium disabled:opacity-50"
+            >
+              {removing === keyToRemove?.tail ? "Removing..." : "Remove"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

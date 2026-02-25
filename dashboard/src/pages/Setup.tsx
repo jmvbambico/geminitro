@@ -5,6 +5,7 @@ import { CheckCircle2, RefreshCw, Loader2 } from "lucide-react";
 
 type Stage =
   | "idle"
+  | "select-type"
   | "validating"
   | "select"
   | "scope"
@@ -19,19 +20,122 @@ export function Setup() {
   useDarkMode();
   const [key, setKey] = useState("");
   const [stage, setStage] = useState<Stage>("idle");
+
   const [message, setMessage] = useState("");
   const [models, setModels] = useState<string[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [scope, setScope] = useState<"global" | "local">("global");
   const [autoStart, setAutoStart] = useState<"none" | "launchd" | "systemd">("none");
+  // Agents already set in useEffect
   const [autoUpdate, setAutoUpdate] = useState<boolean>(true);
+
+  const startOAuth = async (provider: "antigravity" | "gemini_cli") => {
+    setStage("validating");
+    setMessage(`Starting ${provider === "antigravity" ? "Antigravity" : "Gemini CLI"} OAuth...`);
+
+    try {
+      const res = await api.post(`/api/keys/oauth/${provider}`, {});
+      if (res.error) {
+        setStage("error");
+        setMessage(res.error);
+        return;
+      }
+
+      if (!res.authUrl) {
+        setStage("error");
+        setMessage("Invalid response from server - no auth URL received.");
+        return;
+      }
+
+      // Store OAuth state in localStorage before navigating away
+      localStorage.setItem(
+        "geminitro_oauth_pending",
+        JSON.stringify({
+          provider,
+          returnTo: "setup",
+          timestamp: Date.now(),
+        }),
+      );
+
+      // Navigate to OAuth URL in same window (popup blockers won't interfere)
+      window.location.href = res.authUrl;
+    } catch (err) {
+      setStage("error");
+      setMessage(`Could not reach server: ${err instanceof Error ? err.message : "Unknown error"}`);
+    }
+  };
+
+  const handleImport = async () => {
+    setStage("validating");
+    setMessage("Importing existing accounts...");
+    try {
+      const res = await api.post("/api/keys/import-antigravity", {});
+      if (res.error) {
+        setStage("error");
+        setMessage(res.error);
+      } else if (res.imported > 0) {
+        setMessage(`${res.imported} account(s) imported!`);
+        setStage("select");
+        setModels(res.models ?? []);
+      } else {
+        setStage("error");
+        setMessage("No accounts found in OpenCode config.");
+      }
+    } catch {
+      setStage("error");
+      setMessage("Could not reach server.");
+    }
+  };
 
   useEffect(() => {
     api.get("/api/agents").then((data: Agent[]) => {
       setAgents(data);
       setSelectedAgents(data.map((a) => a.id));
     });
+
+    // Check if returning from OAuth
+    const checkOAuthReturn = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const oauthParam = urlParams.get("oauth");
+
+      if (oauthParam === "success") {
+        // Clear URL parameter
+        window.history.replaceState({}, "", "/dashboard/setup");
+
+        // Check localStorage for OAuth success data
+        const successData = localStorage.getItem("geminitro_oauth_success");
+        if (successData) {
+          try {
+            const data = JSON.parse(successData);
+            localStorage.removeItem("geminitro_oauth_success");
+            localStorage.removeItem("geminitro_oauth_pending");
+
+            setMessage(`Authentication successful! Welcome, ${data.email}`);
+
+            // Fetch models
+            try {
+              const modelsRes = await api.get("/v1/models");
+              const modelList = modelsRes?.data?.map((m: any) => m.id) || [];
+              setModels(modelList);
+            } catch {
+              setModels([]);
+            }
+
+            setStage("select");
+          } catch (e) {
+            console.error("[OAuth] Error processing success:", e);
+            setStage("error");
+            setMessage("Authentication succeeded but failed to process the result.");
+          }
+        } else {
+          setStage("error");
+          setMessage("Authentication data not found. Please try again.");
+        }
+      }
+    };
+
+    checkOAuthReturn();
   }, []);
 
   const handleAdd = async () => {
@@ -117,25 +221,105 @@ export function Setup() {
         </div>
 
         {(stage === "idle" || stage === "validating" || stage === "error") && (
-          <div className="rounded-xl border border-border bg-card p-6 space-y-4">
-            <label className="block text-sm font-medium">Gemini API Key</label>
-            <input
-              type="password"
-              placeholder="AIzaSy..."
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-              className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-            {stage === "error" && <p className="text-sm text-destructive">{message}</p>}
-            <button
-              onClick={handleAdd}
-              disabled={stage === "validating" || !key.trim()}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
-            >
-              {stage === "validating" && <RefreshCw className="w-4 h-4 animate-spin" />}
-              {stage === "validating" ? "Validating key..." : "Add Key & Continue"}
-            </button>
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-4">
+              {/* Method 1: API Key */}
+              <div className="rounded-xl border border-border bg-card p-5 shadow-sm transition-all hover:shadow-md">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center">
+                    <img src="/aistudio.webp" alt="AI Studio" className="w-5 h-5 object-contain" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium">Google AI Studio</h3>
+                    <p className="text-xs text-muted-foreground">Free & Fast API Keys</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder="AIzaSy..."
+                    value={key}
+                    onChange={(e) => setKey(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+                    className="flex-1 px-3 py-2 rounded-lg border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  <button
+                    onClick={handleAdd}
+                    disabled={stage === "validating" || !key.trim()}
+                    className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+                  >
+                    {stage === "validating" ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      "Add"
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Method 2: Antigravity OAuth */}
+              <button
+                onClick={() => startOAuth("antigravity")}
+                disabled={stage === "validating"}
+                className="flex items-center gap-4 p-5 rounded-xl border border-border bg-card text-left transition-all hover:border-primary hover:shadow-md disabled:opacity-50"
+              >
+                <div className="w-10 h-10 rounded-full bg-cyan-500/10 flex items-center justify-center">
+                  <img
+                    src="/antigravity.webp"
+                    alt="Antigravity"
+                    className="w-6 h-6 object-contain rounded-full"
+                  />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-medium">Antigravity Account</h3>
+                  <p className="text-xs text-muted-foreground">Sign in with Google via OAuth</p>
+                </div>
+                <div className="text-primary opacity-0 group-hover:opacity-100">→</div>
+              </button>
+
+              {/* Method 3: Gemini CLI OAuth */}
+              <button
+                onClick={() => startOAuth("gemini_cli")}
+                disabled={stage === "validating"}
+                className="flex items-center gap-4 p-5 rounded-xl border border-border bg-card text-left transition-all hover:border-primary hover:shadow-md disabled:opacity-50"
+              >
+                <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center">
+                  <img src="/gemini.webp" alt="Gemini CLI" className="w-6 h-6 object-contain" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-medium">Gemini CLI Account</h3>
+                  <p className="text-xs text-muted-foreground">Use existing CLI credentials</p>
+                </div>
+              </button>
+
+              {/* Method 4: Import */}
+              <button
+                onClick={handleImport}
+                disabled={stage === "validating"}
+                className="flex items-center gap-4 p-5 rounded-xl border border-border bg-card text-left transition-all hover:border-primary hover:shadow-md disabled:opacity-50"
+              >
+                <div className="w-10 h-10 rounded-full bg-orange-500/10 flex items-center justify-center">
+                  <RefreshCw className="w-5 h-5 text-orange-500" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-medium">Local Import</h3>
+                  <p className="text-xs text-muted-foreground">Quickly import from OpenCode logs</p>
+                </div>
+              </button>
+            </div>
+
+            {stage === "validating" && (
+              <div className="flex flex-col items-center gap-2 p-4">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                <p className="text-sm font-medium">{message}</p>
+              </div>
+            )}
+
+            {stage === "error" && (
+              <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm text-center">
+                {message}
+              </div>
+            )}
           </div>
         )}
 

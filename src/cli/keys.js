@@ -76,10 +76,19 @@ const addKeyDirect = (key, models) => {
   return { success: true };
 };
 
-const add = async (key) => {
-  if (!key) {
+const add = async (key, options = {}) => {
+  const { oauth = false } = options;
+
+  if (!key && !oauth) {
     console.error(chalk.red("\n  Usage: geminitro key add <API_KEY>\n"));
     process.exit(1);
+  }
+
+  if (oauth) {
+    // OAuth flow - would trigger browser-based auth
+    console.log(chalk.yellow("\n  ⚠ OAuth authentication requires browser-based flow"));
+    console.log(chalk.gray("  Use the dashboard or run 'geminitro start' for interactive setup\n"));
+    return;
   }
 
   let res;
@@ -237,19 +246,240 @@ const list = async () => {
   const now = Date.now();
   for (const k of keys) {
     const tail = k.key ? `...${k.key.slice(-8)}` : "???";
+    const typeLabel = k.type === "oauth" ? chalk.cyan("[OAuth]") : "";
 
     if (k.status === "active") {
       console.log(
-        `  ${chalk.green("active  ")}  ${chalk.white(tail)}  ${chalk.gray(`${k.usage ?? 0} req  ${k.errors ?? 0} err`)}`,
+        `  ${chalk.green("active  ")}  ${typeLabel}  ${chalk.white(tail)}  ${chalk.gray(`${k.usage ?? 0} req  ${k.errors ?? 0} err`)}`,
       );
+      if (k.email) {
+        console.log(chalk.gray(`    ${k.email}`));
+      }
     } else {
       const remaining = Math.max(0, Math.ceil((COOLDOWN_TIME - (now - (k.lastUsed || 0))) / 1000));
       console.log(
-        `  ${chalk.yellow("cooldown")}  ${chalk.white(tail)}  ${chalk.gray(`${k.usage ?? 0} req  ${k.errors ?? 0} err`)}  ${chalk.yellow(`${remaining}s`)}`,
+        `  ${chalk.yellow("cooldown")}  ${typeLabel}  ${chalk.white(tail)}  ${chalk.gray(`${k.usage ?? 0} req  ${k.errors ?? 0} err`)}  ${chalk.yellow(`${remaining}s`)}`,
       );
     }
   }
   console.log("");
 };
 
-module.exports = { add, remove, list };
+const importAntigravity = async () => {
+  console.log(chalk.bold("\n  Checking for Antigravity accounts...\n"));
+
+  let res;
+  try {
+    res = await request("/api/keys/import-antigravity", { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.imported > 0) {
+        console.log(chalk.green(`  ✓ Imported ${data.imported} Antigravity accounts`));
+        if (data.skipped > 0) {
+          console.log(chalk.gray(`  (${data.skipped} already in pool, skipped)`));
+        }
+      } else {
+        console.log(chalk.yellow("  No new Antigravity accounts found"));
+      }
+    } else {
+      console.log(chalk.yellow("  Server error, trying direct import..."));
+      const keyService = require("../../services/keyService");
+      keyService.loadKeys();
+      const result = await keyService.importAntigravityAccounts();
+      if (result.imported > 0) {
+        console.log(chalk.green(`  ✓ Imported ${result.imported} Antigravity accounts`));
+        // Update agent configs
+        try {
+          const install = require("../../src/cli/install");
+          const geminiService = require("../../services/geminiService");
+          const allModels = [
+            ...(geminiService.getDynamicModels() || []),
+            ...(keyService.getAllOAuthModels() || []),
+          ];
+          const uniqueModels = [...new Set(allModels)];
+          if (uniqueModels.length > 0) {
+            install.updateAgentConfig(uniqueModels);
+            console.log(
+              chalk.green(`  ✓ Updated agent configs with ${uniqueModels.length} models`),
+            );
+          }
+        } catch {}
+      } else {
+        console.log(chalk.yellow("  No Antigravity accounts found to import"));
+      }
+    }
+  } catch {
+    console.log(chalk.gray("  Server not running, trying direct import..."));
+    try {
+      const keyService = require("../../services/keyService");
+      keyService.loadKeys();
+      const result = await keyService.importAntigravityAccounts();
+      if (result.imported > 0) {
+        console.log(chalk.green(`  ✓ Imported ${result.imported} Antigravity accounts`));
+      } else {
+        console.log(chalk.yellow("  No Antigravity accounts found"));
+        console.log(chalk.gray("\n  To use Antigravity:"));
+        console.log(
+          chalk.white("    1. Install antigravity-auth in OpenCode: opencode auth login"),
+        );
+        console.log(chalk.white("    2. Run: geminitro key import-antigravity"));
+      }
+    } catch (e) {
+      console.error(chalk.red(`  ✗ Error: ${e.message}`));
+    }
+  }
+  console.log("");
+};
+
+const oauthAntigravity = async () => {
+  const open = require("open");
+  const oauthService = require("../../services/oauthService");
+  const keyService = require("../../services/keyService");
+
+  console.log(chalk.bold("\n  Starting Antigravity OAuth flow...\n"));
+  console.log(chalk.gray("  A browser window will open for authentication\n"));
+
+  try {
+    const { url } = oauthService.generateAuthUrl("antigravity");
+    await open(url);
+    console.log(chalk.cyan(`  Opened: ${url.slice(0, 60)}...`));
+    console.log(chalk.gray("\n  Waiting for authentication... (press Ctrl+C to cancel)"));
+
+    // Wait for OAuth to complete - startOAuthServer now resolves when callback fires
+    const tokens = await oauthService.startOAuthServer();
+
+    keyService.loadKeys();
+    const result = await keyService.addOAuthToken(tokens.refreshToken, "antigravity", tokens.email);
+    if (result.success) {
+      console.log(chalk.green(`\n  ✓ Authenticated as ${tokens.email}`));
+      console.log(
+        chalk.green(`  ✓ Account added to key pool (${result.models.length} models discovered)`),
+      );
+
+      // Update agent configs with all models
+      try {
+        const install = require("../../src/cli/install");
+        const geminiService = require("../../services/geminiService");
+        const allModels = [
+          ...(geminiService.getDynamicModels() || []),
+          ...(keyService.getAllOAuthModels() || []),
+        ];
+        const uniqueModels = [...new Set(allModels)];
+        if (uniqueModels.length > 0) {
+          install.updateAgentConfig(uniqueModels);
+          console.log(chalk.green(`  ✓ Updated agent configs with ${uniqueModels.length} models`));
+        }
+      } catch {
+        // Ignore errors - server might not be running
+      }
+    } else {
+      console.log(chalk.yellow("\n  ⚠ Account already exists in pool\n"));
+    }
+    await oauthService.stopOAuthServer();
+  } catch (e) {
+    console.error(chalk.red(`\n  ✗ Authentication failed: ${e.message}`));
+    await oauthService.stopOAuthServer();
+    process.exit(1);
+  }
+};
+
+const oauthGeminiCli = async () => {
+  const open = require("open");
+  const oauthService = require("../../services/oauthService");
+  const keyService = require("../../services/keyService");
+
+  console.log(chalk.bold("\n  Starting Gemini CLI OAuth flow...\n"));
+  console.log(chalk.gray("  A browser window will open for authentication\n"));
+
+  try {
+    const { url } = oauthService.generateAuthUrl("gemini_cli");
+    await open(url);
+    console.log(chalk.cyan(`  Opened: ${url.slice(0, 60)}...`));
+    console.log(chalk.gray("\n  Waiting for authentication... (press Ctrl+C to cancel)"));
+
+    // Wait for OAuth to complete - startOAuthServer now resolves when callback fires
+    const tokens = await oauthService.startOAuthServer();
+
+    keyService.loadKeys();
+    const result = await keyService.addOAuthToken(tokens.refreshToken, "gemini_cli", tokens.email);
+    if (result.success) {
+      console.log(chalk.green(`\n  ✓ Authenticated as ${tokens.email}`));
+      console.log(
+        chalk.green(`  ✓ Account added to key pool (${result.models.length} models discovered)`),
+      );
+
+      // Update agent configs with all models
+      try {
+        const install = require("../../src/cli/install");
+        const geminiService = require("../../services/geminiService");
+        const allModels = [
+          ...(geminiService.getDynamicModels() || []),
+          ...(keyService.getAllOAuthModels() || []),
+        ];
+        const uniqueModels = [...new Set(allModels)];
+        if (uniqueModels.length > 0) {
+          install.updateAgentConfig(uniqueModels);
+          console.log(chalk.green(`  ✓ Updated agent configs with ${uniqueModels.length} models`));
+        }
+      } catch {
+        // Ignore errors - server might not be running
+      }
+    } else {
+      console.log(chalk.yellow("\n  ⚠ Account already exists in pool\n"));
+    }
+    await oauthService.stopOAuthServer();
+  } catch (e) {
+    console.error(chalk.red(`\n  ✗ Authentication failed: ${e.message}`));
+    await oauthService.stopOAuthServer();
+    process.exit(1);
+  }
+};
+
+const importGeminiCli = async () => {
+  console.log(chalk.bold("\n  Checking for Gemini CLI accounts...\n"));
+
+  try {
+    const keyService = require("../../services/keyService");
+    keyService.loadKeys();
+    const result = await keyService.importGeminiCliAccounts();
+    if (result.imported > 0) {
+      console.log(chalk.green(`  ✓ Imported ${result.imported} Gemini CLI accounts`));
+      if (result.skipped > 0) {
+        console.log(chalk.gray(`  (${result.skipped} already in pool, skipped)`));
+      }
+      // Update agent configs
+      try {
+        const install = require("../../src/cli/install");
+        const geminiService = require("../../services/geminiService");
+        const allModels = [
+          ...(geminiService.getDynamicModels() || []),
+          ...(keyService.getAllOAuthModels() || []),
+        ];
+        const uniqueModels = [...new Set(allModels)];
+        if (uniqueModels.length > 0) {
+          install.updateAgentConfig(uniqueModels);
+          console.log(chalk.green(`  ✓ Updated agent configs with ${uniqueModels.length} models`));
+        }
+      } catch {}
+    } else {
+      console.log(chalk.yellow("  No Gemini CLI accounts found"));
+      console.log(chalk.gray("\n  To use Gemini CLI:"));
+      console.log(chalk.white("    1. Install: npm install -g @google/gemini-cli"));
+      console.log(chalk.white("    2. Authenticate: gemini auth login"));
+      console.log(chalk.white("    3. Run: geminitro key import-gemini-cli"));
+    }
+  } catch (e) {
+    console.error(chalk.red(`  ✗ Error: ${e.message}`));
+  }
+  console.log("");
+};
+
+module.exports = {
+  add,
+  remove,
+  list,
+  importAntigravity,
+  importGeminiCli,
+  oauthAntigravity,
+  oauthGeminiCli,
+};

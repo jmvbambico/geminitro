@@ -80,14 +80,31 @@ Already configured?
 
 Run `geminitro install` and select your agent. Supported agents:
 
-| Agent            | Config written                                          | How to use                                |
-| ---------------- | ------------------------------------------------------- | ----------------------------------------- |
-| **OpenCode**     | `~/.config/opencode/opencode.json` or `./opencode.json` | `--model geminitro/<model>`               |
-| **Continue.dev** | `~/.continue/config.yaml`                               | Select model in Continue's picker         |
-| **Aider**        | `~/.aider.conf.yml`                                     | Automatic — runs via GemiNitro by default |
-| **Codex CLI**    | `~/.codex/config.toml`                                  | Automatic — uses configured provider      |
-| **OpenCrabs**    | `~/.opencrabs/config.toml` + `keys.toml`                | Select custom provider                    |
-| **Kimi Code**    | `~/.kimi/config.toml`                                   | Uses `geminitro` provider                 |
+| Agent              | Config written                                          | How to use                                |
+| ------------------ | ------------------------------------------------------- | ----------------------------------------- |
+| **OpenCode**       | `~/.config/opencode/opencode.json` or `./opencode.json` | `--model geminitro/<model>`               |
+| **Continue.dev**   | `~/.continue/config.yaml`                               | Select model in Continue's picker         |
+| **Aider**          | `~/.aider.conf.yml`                                     | Automatic — runs via GemiNitro by default |
+| **Codex CLI**      | `~/.codex/config.toml`                                  | Automatic — uses configured provider      |
+| **OpenCrabs**      | `~/.opencrabs/config.toml` + `keys.toml`                | Select custom provider                    |
+| **Kimi Code**      | `~/.kimi/config.toml`                                   | Uses `geminitro` provider                 |
+| **Manual / Other** | `baseURL: http://localhost:7536/v1`                     | `apiKey: geminitro`                       |
+
+### Supported Capabilities
+
+GemiNitro provides a high-fidelity translation layer between the OpenAI spec and Gemini's native features, ensuring advanced coding agents work out-of-the-box.
+
+| Capability                  | OpenAI Format                              | Gemini/Claude Mapping                       | Status |
+| --------------------------- | ------------------------------------------ | ------------------------------------------- | ------ |
+| **Tool Calls**              | `tools[]`, `tool_choice`                   | `functionDeclarations`, `toolConfig`        | ✅     |
+| **Streaming Finish Reason** | `finish_reason: "tool_calls"`              | Signal emitted on terminal stream chunk     | ✅     |
+| **JSON Mode**               | `response_format: { type: "json_object" }` | `responseMimeType: "application/json"`      | ✅     |
+| **Reasoning / Thinking**    | `reasoning_effort` (o-series)              | `thinkingConfig` (budget tokens)            | ✅     |
+| **Extended Thinking**       | `thinking: { budget_tokens: N }`           | Claude `thinkingBudgetTokens` (passthrough) | ✅     |
+| **Usage Stats**             | `stream_options.include_usage`             | `usageMetadata` (tracked per-chunk)         | ✅     |
+| **Stop Sequences**          | `stop: ["\n\nHuman:"]`                     | `stopSequences`                             | ✅     |
+| **Vision**                  | `image_url`                                | `inlineData` / `image` parts                | ✅     |
+| **Structured Outputs**      | `response_format: { type: "json_schema" }` | `responseSchema` (Gemini 1.5/2.0)           | ✅     |
 
 ### OpenCode
 
@@ -245,6 +262,22 @@ geminitro key list           List all keys with status
 
 Set in `.env` or as environment variables. Copy `.env.example` to get started.
 
+### OAuth Setup (for Antigravity / Gemini CLI accounts)
+
+To use OAuth-based accounts (Antigravity or Gemini CLI), you need Google OAuth credentials. Add them to your `.env`:
+
+```
+OAUTH_CLIENT_ID=your-client-id-here
+OAUTH_CLIENT_SECRET=your-client-secret-here
+```
+
+**Where to get them:**
+
+1. **From the OpenCode Antigravity plugin** (easiest) — copy `ANTIGRAVITY_CLIENT_ID` and `ANTIGRAVITY_CLIENT_SECRET` from the plugin source at [`src/constants.ts`](https://github.com/NoeFabris/opencode-antigravity-auth/blob/main/src/constants.ts)
+2. **Create your own** — set up an OAuth 2.0 client at [Google Cloud Console](https://console.cloud.google.com/apis/credentials) with the `cloud-platform`, `userinfo.email`, and `userinfo.profile` scopes
+
+> OAuth credentials are only needed for Antigravity/Gemini CLI account features. Standard Gemini API keys from [AI Studio](https://aistudio.google.com) work without them.
+
 ---
 
 ## API Reference
@@ -287,6 +320,13 @@ The server starts on `:7536`. Dashboard source lives in `dashboard/` (Vite + Rea
 - **GitHub Actions** — lint, security audit, build (Node 18/20/22 matrix) on every push/PR
 - **Dependabot** — weekly npm updates, monthly GitHub Actions updates
 - **Pre-commit hooks** — ESLint + Prettier + npm audit on every commit
+
+---
+
+## Credits
+
+- **[KeyStream-Gemini](https://github.com/billtruong003/KeyStream-Gemini)** by billtruong003 — the original Gemini key-pooling proxy that inspired GemiNitro's core architecture: LRU key rotation, automatic cooldown recovery, and the OpenAI-compatible interface.
+- **[opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)** by NoeFabris — reverse-engineered the Antigravity OAuth flow and API spec that GemiNitro's OAuth service and Antigravity integration are built on.
 
 ---
 

@@ -156,9 +156,96 @@ const run = async (options = {}) => {
     });
 
     if (method === "terminal") {
-      const apiKey = await input({ message: "Paste your Gemini API key:" });
-      if (apiKey?.trim()) {
-        await require("./keys").add(apiKey.trim());
+      const keyType = await select({
+        message: "What type of credentials do you want to add?",
+        choices: [
+          { name: "Gemini API Key (ai-studio.google.com)", value: "api_key" },
+          { name: "Antigravity Account (OAuth)", value: "antigravity" },
+          { name: "Gemini CLI Account (OAuth)", value: "gemini_cli" },
+        ],
+      });
+
+      if (keyType === "antigravity") {
+        const keyService = require("../../services/keyService");
+        keyService.loadKeys();
+        const existing = keyService.detectAntigravityAccounts();
+
+        if (existing.length > 0) {
+          const action = await select({
+            message: `Found ${existing.length} existing Antigravity account(s). What would you like to do?`,
+            choices: [
+              { name: "Import existing accounts", value: "import" },
+              { name: "Authenticate new account (OAuth)", value: "oauth" },
+            ],
+          });
+
+          if (action === "import") {
+            const result = await keyService.importAntigravityAccounts();
+            if (result.imported > 0) {
+              console.log(
+                chalk.green(`\n  ✓ Imported ${result.imported} Antigravity account(s)\n`),
+              );
+            } else {
+              console.log(chalk.yellow("  No new accounts to import\n"));
+            }
+          } else {
+            await require("./keys").oauthAntigravity();
+          }
+        } else {
+          console.log(chalk.gray("\n  No existing Antigravity accounts found."));
+          const addNew = await select({
+            message: "Would you like to authenticate a new account?",
+            choices: [
+              { name: "Yes, authenticate with Google (OAuth)", value: true },
+              { name: "No, skip", value: false },
+            ],
+          });
+          if (addNew) {
+            await require("./keys").oauthAntigravity();
+          }
+        }
+      } else if (keyType === "gemini_cli") {
+        const keyService = require("../../services/keyService");
+        keyService.loadKeys();
+        const existing = keyService.detectGeminiCliAccounts();
+
+        if (existing.length > 0) {
+          const action = await select({
+            message: `Found ${existing.length} existing Gemini CLI account(s). What would you like to do?`,
+            choices: [
+              { name: "Import existing accounts", value: "import" },
+              { name: "Authenticate new account (OAuth)", value: "oauth" },
+            ],
+          });
+
+          if (action === "import") {
+            const result = await keyService.importGeminiCliAccounts();
+            if (result.imported > 0) {
+              console.log(chalk.green(`\n  ✓ Imported ${result.imported} Gemini CLI account(s)\n`));
+            } else {
+              console.log(chalk.yellow("  No new accounts to import\n"));
+            }
+          } else {
+            await require("./keys").oauthGeminiCli();
+          }
+        } else {
+          console.log(chalk.gray("\n  No existing Gemini CLI accounts found."));
+          const addNew = await select({
+            message: "Would you like to authenticate a new account?",
+            choices: [
+              { name: "Yes, authenticate with Google (OAuth)", value: true },
+              { name: "No, skip", value: false },
+            ],
+          });
+          if (addNew) {
+            await require("./keys").oauthGeminiCli();
+          }
+        }
+      } else {
+        const apiKey = await input({ message: "Paste your Gemini API key:" });
+        if (apiKey?.trim()) {
+          await require("./keys").add(apiKey.trim());
+        }
       }
     } else if (method === "browser") {
       await startServer(config.PORT);
