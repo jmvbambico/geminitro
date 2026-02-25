@@ -201,6 +201,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [showApiKey, setShowApiKey] = useState(false);
   const [saved, setSaved] = useState(false);
   const [autoUpdate, setAutoUpdate] = useState<boolean | null>(null);
+  const [setupPreference, setSetupPreference] = useState<"browser" | "terminal" | null>(null);
   const [autoUpdateSaving, setAutoUpdateSaving] = useState(false);
 
   useEffect(() => {
@@ -210,6 +211,9 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         if (typeof data?.autoUpdate === "boolean") setAutoUpdate(data.autoUpdate);
       })
       .catch(() => {});
+    api.get("/api/preferences").then((data) => {
+      setSetupPreference(data.setupMethod || null);
+    });
   }, []);
 
   const saveKey = () => {
@@ -227,6 +231,13 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       setAutoUpdate(next);
     } catch {}
     setAutoUpdateSaving(false);
+  };
+
+  const handlePreferenceChange = async (value: "browser" | "terminal" | null) => {
+    const res = await api.post("/api/preferences", { setupMethod: value });
+    if (!res.error) {
+      setSetupPreference(value);
+    }
   };
 
   return (
@@ -300,6 +311,60 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             </button>
           </div>
         )}
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Interface Preference
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Choose your preferred interface when running{" "}
+            <code className="bg-muted px-1 rounded">geminitro start</code>
+          </p>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 p-2.5 rounded-lg border border-input bg-background cursor-pointer hover:border-primary transition-colors">
+              <input
+                type="radio"
+                name="setupPreference"
+                checked={setupPreference === "browser"}
+                onChange={() => handlePreferenceChange("browser")}
+                className="w-3.5 h-3.5"
+              />
+              <div className="flex-1">
+                <div className="font-medium text-xs">Browser (Recommended)</div>
+                <div className="text-xs text-muted-foreground">
+                  Always open dashboard automatically
+                </div>
+              </div>
+            </label>
+            <label className="flex items-center gap-2 p-2.5 rounded-lg border border-input bg-background cursor-pointer hover:border-primary transition-colors">
+              <input
+                type="radio"
+                name="setupPreference"
+                checked={setupPreference === "terminal"}
+                onChange={() => handlePreferenceChange("terminal")}
+                className="w-3.5 h-3.5"
+              />
+              <div className="flex-1">
+                <div className="font-medium text-xs">Terminal</div>
+                <div className="text-xs text-muted-foreground">Always use interactive CLI</div>
+              </div>
+            </label>
+            <label className="flex items-center gap-2 p-2.5 rounded-lg border border-input bg-background cursor-pointer hover:border-primary transition-colors">
+              <input
+                type="radio"
+                name="setupPreference"
+                checked={setupPreference === null}
+                onChange={() => handlePreferenceChange(null)}
+                className="w-3.5 h-3.5"
+              />
+              <div className="flex-1">
+                <div className="font-medium text-xs">Ask Every Time</div>
+                <div className="text-xs text-muted-foreground">
+                  Choose browser or terminal each time (default)
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
       </div>
     </Modal>
   );

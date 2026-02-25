@@ -69,7 +69,9 @@ function startOAuthServer() {
       const parsedUrl = new URL(req.url, `http://localhost:${OAUTH_CALLBACK_PORT}`);
 
       if (parsedUrl.pathname === "/oauth-callback") {
-        const { code, state, error } = parsedUrl.searchParams;
+        const code = parsedUrl.searchParams.get("code");
+        const state = parsedUrl.searchParams.get("state");
+        const error = parsedUrl.searchParams.get("error");
 
         if (error) {
           res.writeHead(400, { "Content-Type": "text/html" });
