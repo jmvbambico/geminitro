@@ -1006,6 +1006,8 @@ module.exports = {
   runUninstall,
   updateAgentConfig,
   detectAvailableAgents,
+  hasAnyAgentInstalled,
   installOpenCode,
+  writeEnvValue,
   FALLBACK_MODELS,
 };

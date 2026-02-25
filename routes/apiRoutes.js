@@ -731,6 +731,43 @@ module.exports = (io) => {
     }
   });
 
+  // GET /api/setup-state — returns current setup state for wizard
+  router.get("/api/setup-state", (req, res) => {
+    const install = require("../src/cli/install");
+    const hasKeys = keyService.getKeyPool().length > 0;
+    const hasAgents = install.hasAnyAgentInstalled(config.PORT);
+    const models = hasKeys
+      ? [...(geminiService.getDynamicModels() || []), ...(keyService.getAllOAuthModels() || [])]
+      : [];
+    const agents = install.detectAvailableAgents();
+
+    res.json({ hasKeys, hasAgents, models, agents });
+  });
+
+  // GET /api/preferences — returns user preferences from .env
+  router.get("/api/preferences", (req, res) => {
+    res.json({
+      setupMethod: config.SETUP_METHOD || null,
+    });
+  });
+
+  // POST /api/preferences — saves user preferences to .env
+  router.post("/api/preferences", (req, res) => {
+    const { setupMethod } = req.body;
+
+    if (setupMethod !== null && !["browser", "terminal"].includes(setupMethod)) {
+      return res.status(400).json({ error: "Invalid setupMethod value" });
+    }
+
+    try {
+      const install = require("../src/cli/install");
+      install.writeEnvValue("SETUP_METHOD", setupMethod || "");
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to save preference" });
+    }
+  });
+
   router.get("/api/agents", (req, res) => {
     const install = require("../src/cli/install");
     const agents = install.detectAvailableAgents();

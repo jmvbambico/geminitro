@@ -130,32 +130,100 @@ const startServer = async (port) => {
   require("../../server");
 };
 
+const promptSetupMethod = async (message) => {
+  const { select } = require("@inquirer/prompts");
+  return await select({
+    message,
+    choices: [
+      { name: "Browser — open dashboard setup wizard", value: "browser" },
+      { name: "Terminal — interactive CLI setup", value: "terminal" },
+      { name: "Skip — I'll do this later", value: "skip" },
+    ],
+  });
+};
+
+const promptSetupMethodWithPreference = async (message) => {
+  const chalk = require("chalk");
+  const { confirm } = require("@inquirer/prompts");
+  const method = await promptSetupMethod(message);
+
+  if (method !== "skip") {
+    const remember = await confirm({
+      message: "Remember this choice? (Never ask again)",
+      default: false,
+    });
+
+    if (remember) {
+      const install = require("../cli/install");
+      install.writeEnvValue("SETUP_METHOD", method);
+      console.log(chalk.green(`  ✓ Preference saved to .env\n`));
+    }
+  }
+
+  return method;
+};
+
+const getSetupState = async () => {
+  const config = require("../../config");
+
+  // Try to fetch from API if server is running
+  try {
+    const res = await fetch(`http://localhost:${config.PORT}/api/setup-state`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (res.ok) return await res.json();
+  } catch {}
+
+  // Fallback: check locally
+  return {
+    hasKeys: hasKeys(),
+    hasAgents: isProviderRegistered(),
+    models: [],
+    agents: [],
+  };
+};
+
+const openBrowserSetup = async (path) => {
+  const config = require("../../config");
+  const chalk = require("chalk");
+
+  await startServer(config.PORT);
+  await new Promise((r) => setTimeout(r, 1000));
+
+  const url = `http://localhost:${config.PORT}${path}`;
+  console.log(chalk.cyan(`\n  Opening setup wizard: ${url}\n`));
+  await openBrowser(url);
+};
+
 const run = async (options = {}) => {
   const chalk = require("chalk");
   const { select, input } = require("@inquirer/prompts");
   const config = require("../../config");
   const { version } = require("../../package.json");
 
+  // Splash screen
   if (options.splash !== false) {
     require("./splash").printSplash(version, config.PORT);
   }
 
-  const registered = isProviderRegistered();
-  const hasApiKeys = hasKeys();
+  // Check for saved preference
+  const savedMethod = config.SETUP_METHOD;
 
-  if (!hasApiKeys) {
+  // Fetch current setup state
+  const setupState = await getSetupState();
+
+  // ========== Phase 1: Keys ==========
+  if (!setupState.hasKeys) {
     console.log(chalk.yellow("\n  ⚠  No API keys configured.\n"));
 
-    const method = await select({
-      message: "Add your first Gemini API key via:",
-      choices: [
-        { name: "Terminal — enter key now", value: "terminal" },
-        { name: "Browser — open dashboard setup wizard", value: "browser" },
-        { name: "Skip — I'll add keys later", value: "skip" },
-      ],
-    });
+    const method =
+      savedMethod || (await promptSetupMethodWithPreference("Add your first Gemini API key via:"));
 
-    if (method === "terminal") {
+    if (method === "browser") {
+      await openBrowserSetup("/dashboard/setup");
+      return;
+    } else if (method === "terminal") {
+      // Terminal key setup flow
       const keyType = await select({
         message: "What type of credentials do you want to add?",
         choices: [
@@ -247,48 +315,48 @@ const run = async (options = {}) => {
           await require("./keys").add(apiKey.trim());
         }
       }
-    } else if (method === "browser") {
-      await startServer(config.PORT);
-      await new Promise((r) => setTimeout(r, 1000));
-      const setupUrl = `http://localhost:${config.PORT}/dashboard/setup`;
-      console.log(chalk.cyan(`\n  Opening setup wizard: ${setupUrl}\n`));
-      await openBrowser(setupUrl);
-      return;
     } else {
       await startServer(config.PORT);
       return;
     }
   }
 
-  if (!registered) {
+  // ========== Phase 2: Agent Registration ==========
+  if (!setupState.hasAgents) {
     console.log(
       chalk.yellow("\n  ⚠  GemiNitro is not yet registered to any known coding agents.\n"),
     );
 
-    const action = await select({
-      message: "What would you like to do?",
-      choices: [
-        { name: "Install now (interactive)", value: "install" },
-        { name: "Skip — just start the server", value: "skip" },
-      ],
-    });
+    const method =
+      savedMethod ||
+      (await promptSetupMethodWithPreference("Register GemiNitro with coding agents via:"));
 
-    if (action === "install") {
+    if (method === "browser") {
+      await openBrowserSetup("/dashboard/setup?skip_key=true");
+      return;
+    } else if (method === "terminal") {
       await require("./install").runInteractive();
+    } else {
+      await startServer(config.PORT);
+      return;
     }
   }
 
-  const choice = await select({
-    message: "GemiNitro is ready. How do you want to proceed?",
-    choices: [
-      { name: "Open browser dashboard", value: "browser" },
-      { name: "Stay in terminal", value: "terminal" },
-    ],
-  });
+  // ========== Phase 3: Ready ==========
+  const finalChoice =
+    savedMethod === "browser"
+      ? "browser"
+      : await select({
+          message: "GemiNitro is ready. How do you want to proceed?",
+          choices: [
+            { name: "Open browser dashboard", value: "browser" },
+            { name: "Stay in terminal", value: "terminal" },
+          ],
+        });
 
   await startServer(config.PORT);
 
-  if (choice === "browser") {
+  if (finalChoice === "browser") {
     await new Promise((r) => setTimeout(r, 1000));
     const dashUrl = `http://localhost:${config.PORT}/dashboard`;
     console.log(chalk.cyan(`\n  Opening dashboard: ${dashUrl}\n`));

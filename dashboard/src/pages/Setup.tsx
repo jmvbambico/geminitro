@@ -29,6 +29,7 @@ export function Setup() {
   const [autoStart, setAutoStart] = useState<"none" | "launchd" | "systemd">("none");
   // Agents already set in useEffect
   const [autoUpdate, setAutoUpdate] = useState<boolean>(true);
+  const [setupPref, setSetupPref] = useState<"browser" | "terminal" | null>(null);
 
   const startOAuth = async (provider: "antigravity" | "gemini_cli") => {
     setStage("validating");
@@ -89,10 +90,31 @@ export function Setup() {
   };
 
   useEffect(() => {
-    api.get("/api/agents").then((data: Agent[]) => {
-      setAgents(data);
-      setSelectedAgents(data.map((a) => a.id));
-    });
+    // Parse query params for hints
+    const urlParams = new URLSearchParams(window.location.search);
+    const skipKey = urlParams.get("skip_key") === "true";
+
+    // Fetch setup state
+    api
+      .get("/api/setup-state")
+      .then((setupState) => {
+        setAgents(setupState.agents || []);
+        setSelectedAgents((setupState.agents || []).map((a: Agent) => a.id));
+
+        // Determine initial stage based on state
+        if (setupState.hasKeys || skipKey) {
+          // Keys exist or skip hint → go to agent selection
+          setModels(setupState.models || []);
+          setStage("select");
+        } else {
+          // No keys → show key entry
+          setStage("idle");
+        }
+      })
+      .catch(() => {
+        // Server not reachable, default to key entry
+        setStage("idle");
+      });
 
     // Check if returning from OAuth
     const checkOAuthReturn = async () => {
@@ -176,18 +198,24 @@ export function Setup() {
   const handleOptions = async () => {
     setStage("installing");
     try {
+      // Install to agents
       const res = await api.post("/api/agents/install", {
         agents: selectedAgents,
         scope,
         autoStart,
         autoUpdate,
       });
-      if (res.success) {
-        setStage("success");
-      } else {
+
+      if (!res.success) {
         setStage("error");
         setMessage("Failed to install to agents");
+        return;
       }
+
+      // Save setup preference
+      await api.post("/api/preferences", { setupMethod: setupPref });
+
+      setStage("success");
     } catch {
       setStage("error");
       setMessage("Could not reach server");
@@ -470,6 +498,60 @@ export function Setup() {
               </label>
             </div>
 
+            <h3 className="text-sm font-medium mb-3">Setup flow preference</h3>
+            <p className="text-xs text-muted-foreground mb-2">
+              How should <code className="bg-muted px-1 rounded">geminitro start</code> handle
+              future setup screens?
+            </p>
+            <div className="space-y-2 mb-4">
+              <label className="flex items-center gap-3 p-3 rounded-lg border border-input bg-background cursor-pointer hover:border-primary">
+                <input
+                  type="radio"
+                  name="setupPref"
+                  checked={setupPref === "browser"}
+                  onChange={() => setSetupPref("browser")}
+                  className="w-4 h-4"
+                />
+                <div className="text-sm">
+                  <div className="font-medium">Always use browser wizard</div>
+                  <div className="text-muted-foreground text-xs">
+                    Open dashboard for all setup tasks
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 rounded-lg border border-input bg-background cursor-pointer hover:border-primary">
+                <input
+                  type="radio"
+                  name="setupPref"
+                  checked={setupPref === "terminal"}
+                  onChange={() => setSetupPref("terminal")}
+                  className="w-4 h-4"
+                />
+                <div className="text-sm">
+                  <div className="font-medium">Always use terminal</div>
+                  <div className="text-muted-foreground text-xs">
+                    Use interactive CLI for setup tasks
+                  </div>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 p-3 rounded-lg border border-input bg-background cursor-pointer hover:border-primary">
+                <input
+                  type="radio"
+                  name="setupPref"
+                  checked={setupPref === null}
+                  onChange={() => setSetupPref(null)}
+                  className="w-4 h-4"
+                />
+                <div className="text-sm">
+                  <div className="font-medium">Ask me each time</div>
+                  <div className="text-muted-foreground text-xs">
+                    Choose browser or terminal each time (default)
+                  </div>
+                </div>
+              </label>
+            </div>
             <button
               onClick={handleOptions}
               className="w-full px-4 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium"

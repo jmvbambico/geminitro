@@ -21,6 +21,7 @@ module.exports = {
   PORT: parseInt(process.env.PORT || "7536", 10),
   NODE_ENV: process.env.NODE_ENV || "development",
   AUTO_UPDATE: process.env.AUTO_UPDATE === "true",
+  SETUP_METHOD: process.env.SETUP_METHOD || null,
   DATA_DIR,
   KEY_FILE: path.join(DATA_DIR, "keys.json"),
   HISTORY_FILE: path.join(DATA_DIR, "history.json"),
