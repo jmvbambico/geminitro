@@ -1,6 +1,6 @@
 {
   "name": "geminitro",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "description": "Gemini API proxy with key rotation — multi-agent coding proxy",
   "main": "server.js",
   "type": "commonjs",
