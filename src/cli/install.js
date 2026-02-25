@@ -885,6 +885,12 @@ const runUninstall = async () => {
     }
   } catch {}
 
+  // Clear SETUP_METHOD preference
+  try {
+    writeEnvValue("SETUP_METHOD", "");
+    console.log(chalk.green(`  ✓ Cleared interface preference`));
+  } catch {}
+
   console.log(chalk.bold(chalk.green("\n  ✓ GemiNitro uninstalled")));
   console.log(chalk.gray("  Your API keys in .geminitro/keys.json are preserved\n"));
 };
