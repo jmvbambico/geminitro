@@ -163,7 +163,13 @@ const mapMessagesToGemini = (messages) => {
             try {
               args = JSON.parse(tc.function.arguments || "{}");
             } catch {}
-            parts.push({ functionCall: { name: tc.function.name, args } });
+            parts.push({
+              functionCall: {
+                name: tc.function.name,
+                args,
+                id: tc.id, // Preserve ID for backends like Antigravity/Claude
+              },
+            });
           }
         }
       }
@@ -176,6 +182,7 @@ const mapMessagesToGemini = (messages) => {
         functionResponse: {
           name: msg.name || msg.tool_call_id || "tool",
           response: { output },
+          id: msg.tool_call_id, // Preserve ID for bridged backends
         },
       });
     } else {

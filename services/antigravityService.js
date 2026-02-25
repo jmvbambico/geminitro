@@ -356,7 +356,13 @@ async function generateContentAntigravity(
             try {
               args = JSON.parse(tc.function.arguments || "{}");
             } catch {}
-            parts.push({ functionCall: { name: tc.function.name, args } });
+            parts.push({
+              functionCall: {
+                name: tc.function.name,
+                args,
+                id: tc.id,
+              },
+            });
           }
         }
       }
@@ -369,6 +375,7 @@ async function generateContentAntigravity(
         functionResponse: {
           name: msg.name || msg.tool_call_id || "tool",
           response: { output },
+          id: msg.tool_call_id, // Also pass ID here for Anthropic tool_result mapping
         },
       });
     } else {
