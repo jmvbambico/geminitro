@@ -621,33 +621,33 @@ export function Overview({
                 label="Health Checks"
               />
               <Switch checked={verboseLogging} onChange={handleVerboseChange} label="Verbose" />
-              {verboseLogging && (
-                <button
-                  onClick={() => {
-                    if (expandedLogs.size > 0) {
-                      setExpandedLogs(new Set());
-                    } else {
-                      const allVerboseLogIds = displayLogs
-                        .filter(
-                          (log) =>
-                            log.message.includes("Request:") || log.message.includes("Response:"),
-                        )
-                        .map((log) => log.id);
-                      setExpandedLogs(new Set(allVerboseLogIds));
-                    }
-                  }}
-                  className="w-6 h-6 flex items-center justify-center rounded bg-muted/50 border border-border text-muted-foreground hover:text-foreground hover:border-foreground transition-colors text-xs font-bold"
-                  title={expandedLogs.size > 0 ? "Collapse All" : "Expand All"}
-                >
-                  {expandedLogs.size > 0 ? "−" : "+"}
-                </button>
-              )}
             </div>
           </div>
           <div className="relative flex-1 min-h-0 overflow-hidden">
+            {verboseLogging && (
+              <button
+                onClick={() => {
+                  if (expandedLogs.size > 0) {
+                    setExpandedLogs(new Set());
+                  } else {
+                    const allVerboseLogIds = displayLogs
+                      .filter(
+                        (log) =>
+                          log.message.includes("Request:") || log.message.includes("Response:"),
+                      )
+                      .map((log) => log.id);
+                    setExpandedLogs(new Set(allVerboseLogIds));
+                  }
+                }}
+                className="absolute top-2 right-4 z-10 w-6 h-6 flex items-center justify-center rounded bg-black/40 border border-white/10 text-white/50 hover:text-white hover:bg-black/60 transition-colors text-xs font-bold backdrop-blur-sm"
+                title={expandedLogs.size > 0 ? "Collapse All" : "Expand All"}
+              >
+                {expandedLogs.size > 0 ? "−" : "+"}
+              </button>
+            )}
             <div
               ref={logsContainerRef}
-              className="h-full overflow-auto rounded-lg p-3 font-mono text-[10px] shadow-inner"
+              className="h-full overflow-auto rounded-lg p-3 pt-10 font-mono text-[10px] shadow-inner"
               style={{
                 backgroundColor: "oklch(0.22 0.008 50)",
                 border: "1px solid oklch(0.30 0.008 50)",

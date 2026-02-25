@@ -667,12 +667,34 @@ module.exports = (io) => {
     res.json({ autoUpdate: config.AUTO_UPDATE, verboseLogging: config.VERBOSE_LOGGING });
   });
 
+  const updateEnv = (key, value) => {
+    const envPath = path.join(__dirname, "../.env");
+    let content = "";
+    try {
+      content = fs.readFileSync(envPath, "utf8");
+    } catch {}
+    const line = `${key}=${value}`;
+    const re = new RegExp(`^${key}=.*$`, "m");
+    content = re.test(content)
+      ? content.replace(re, line)
+      : content + (content.endsWith("\n") ? "" : "\n") + line + "\n";
+    try {
+      fs.writeFileSync(envPath, content);
+      return true;
+    } catch (err) {
+      logger.error(`Failed to update .env for ${key}`, err);
+      return false;
+    }
+  };
+
   router.post("/api/settings/verbose", (req, res) => {
     const { enabled } = req.body;
     if (typeof enabled !== "boolean") {
       return res.status(400).json({ error: "enabled must be a boolean." });
     }
     config.VERBOSE_LOGGING = enabled;
+    process.env.GEMINITRO_VERBOSE_LOGGING = enabled ? "true" : "false";
+    updateEnv("GEMINITRO_VERBOSE_LOGGING", enabled ? "true" : "false");
     logger.info(`Verbose logging ${enabled ? "enabled" : "disabled"}`);
     res.json({ success: true, verboseLogging: enabled });
   });
@@ -682,23 +704,12 @@ module.exports = (io) => {
     if (typeof autoUpdate !== "boolean") {
       return res.status(400).json({ error: "autoUpdate must be a boolean." });
     }
-    const envPath = path.join(__dirname, "../.env");
-    let content = "";
-    try {
-      content = fs.readFileSync(envPath, "utf8");
-    } catch {}
-    const line = `AUTO_UPDATE=${autoUpdate ? "true" : "false"}`;
-    const re = /^AUTO_UPDATE=.*$/m;
-    content = re.test(content)
-      ? content.replace(re, line)
-      : content + (content.endsWith("\n") ? "" : "\n") + line + "\n";
-    try {
-      fs.writeFileSync(envPath, content);
+    if (updateEnv("AUTO_UPDATE", autoUpdate ? "true" : "false")) {
       process.env.AUTO_UPDATE = autoUpdate ? "true" : "false";
       config.AUTO_UPDATE = autoUpdate;
       res.json({ success: true, autoUpdate });
-    } catch (err) {
-      res.status(500).json({ error: "Failed to write .env: " + err.message });
+    } else {
+      res.status(500).json({ error: "Failed to save settings to .env" });
     }
   });
 
