@@ -190,6 +190,7 @@ const run = async (options = {}) => {
 
   // Fetch current setup state
   const setupState = await getSetupState();
+  let didSetupWork = false; // Track if we actually performed setup
 
   // ========== Phase 1: Keys ==========
   if (!setupState.hasKeys) {
@@ -201,6 +202,7 @@ const run = async (options = {}) => {
       await openBrowserSetup("/dashboard/setup");
       return;
     } else if (method === "terminal") {
+      didSetupWork = true; // We're doing setup work
       // Terminal key setup flow
       const keyType = await select({
         message: "What type of credentials do you want to add?",
@@ -312,6 +314,7 @@ const run = async (options = {}) => {
       await openBrowserSetup("/dashboard/setup?skip_key=true");
       return;
     } else if (method === "terminal") {
+      didSetupWork = true; // We're doing setup work
       await require("./install").runInteractive();
     } else {
       await startServer(config.PORT);
@@ -320,8 +323,7 @@ const run = async (options = {}) => {
   }
 
   // ========== Phase 3: Ready ==========
-  // Ask for preference if not already set
-  if (!savedMethod) {
+  if (!savedMethod && didSetupWork) {
     const { confirm } = require("@inquirer/prompts");
 
     console.log(chalk.green("\n  ✓ Setup complete!\n"));
