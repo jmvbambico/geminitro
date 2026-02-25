@@ -623,7 +623,7 @@ export function Overview({
               <Switch checked={verboseLogging} onChange={handleVerboseChange} label="Verbose" />
             </div>
           </div>
-          <div className="relative flex-1 min-h-0 overflow-hidden">
+          <div className="relative flex-1 min-h-0">
             {verboseLogging && (
               <button
                 onClick={() => {
@@ -639,7 +639,7 @@ export function Overview({
                     setExpandedLogs(new Set(allVerboseLogIds));
                   }
                 }}
-                className="absolute top-2 right-4 z-10 w-6 h-6 flex items-center justify-center rounded bg-black/40 border border-white/10 text-white/50 hover:text-white hover:bg-black/60 transition-colors text-xs font-bold backdrop-blur-sm"
+                className="absolute top-[-26px] right-0 z-10 w-6 h-6 flex items-center justify-center rounded bg-muted/60 border border-border text-muted-foreground hover:text-foreground hover:border-foreground transition-all text-xs font-bold shadow-sm"
                 title={expandedLogs.size > 0 ? "Collapse All" : "Expand All"}
               >
                 {expandedLogs.size > 0 ? "−" : "+"}
@@ -647,7 +647,7 @@ export function Overview({
             )}
             <div
               ref={logsContainerRef}
-              className="h-full overflow-auto rounded-lg p-3 pt-10 font-mono text-[10px] shadow-inner"
+              className="h-full overflow-auto rounded-lg p-3 font-mono text-[10px] shadow-inner"
               style={{
                 backgroundColor: "oklch(0.22 0.008 50)",
                 border: "1px solid oklch(0.30 0.008 50)",
