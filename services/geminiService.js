@@ -103,6 +103,18 @@ const convertContentToParts = (content) => {
   return [{ text: String(content) }];
 };
 
+const sanitizeToolParameters = (params) => {
+  if (!params || typeof params !== "object") return params;
+  if (Array.isArray(params)) return params.map(sanitizeToolParameters);
+
+  const out = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (k === "$schema") continue;
+    out[k] = sanitizeToolParameters(v);
+  }
+  return out;
+};
+
 const mapMessagesToGemini = (messages) => {
   let systemParts = [];
   const contents = [];
@@ -299,7 +311,10 @@ const generateContent = async (
               .map((t) => ({
                 name: t.function.name,
                 description: t.function.description || "",
-                parameters: t.function.parameters || { type: "object", properties: {} },
+                parameters: sanitizeToolParameters(t.function.parameters) || {
+                  type: "object",
+                  properties: {},
+                },
               })),
           },
         ]

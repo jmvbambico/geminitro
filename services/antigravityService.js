@@ -427,7 +427,10 @@ async function generateContentAntigravity(
       .map((t) => ({
         name: t.function.name,
         description: t.function.description || "",
-        parameters: t.function.parameters || { type: "object", properties: {} },
+        parameters: sanitizeToolParameters(t.function.parameters) || {
+          type: "object",
+          properties: {},
+        },
       }));
     if (functionDeclarations.length > 0) {
       requestBody.request.tools = [{ functionDeclarations }];
@@ -574,6 +577,18 @@ function convertContentToParts(content) {
   return [{ text: String(content) }];
 }
 
+function sanitizeToolParameters(params) {
+  if (!params || typeof params !== "object") return params;
+  if (Array.isArray(params)) return params.map(sanitizeToolParameters);
+
+  const out = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (k === "$schema") continue;
+    out[k] = sanitizeToolParameters(v);
+  }
+  return out;
+}
+
 module.exports = {
   generateContentAntigravity,
   getAntigravityModels,
@@ -581,4 +596,5 @@ module.exports = {
   fetchAntigravityModels,
   ANTIGRAVITY_ENDPOINTS,
   DEFAULT_ANTIGRAVITY_MODELS,
+  sanitizeToolParameters,
 };
