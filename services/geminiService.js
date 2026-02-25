@@ -111,10 +111,53 @@ const mapMessagesToGemini = (messages) => {
     if (msg.role === "system") {
       const parts = convertContentToParts(msg.content);
       systemParts.push(...parts);
+    } else if (msg.role === "assistant") {
+      // Assistant messages may carry text content AND/OR tool_calls.
+      const parts = [];
+
+      if (msg.content) {
+        parts.push(...convertContentToParts(msg.content));
+      }
+
+      // OpenAI-format tool_calls → Gemini functionCall parts
+      if (Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls) {
+          if (tc.type === "function") {
+            let args = {};
+            try {
+              args = JSON.parse(tc.function.arguments || "{}");
+            } catch {}
+            parts.push({ functionCall: { name: tc.function.name, args } });
+          }
+        }
+      }
+
+      if (parts.length > 0) {
+        contents.push({ role: "model", parts });
+      }
+    } else if (msg.role === "tool") {
+      // OpenAI tool result → Gemini functionResponse part
+      let output = msg.content;
+      try {
+        output = JSON.parse(msg.content);
+      } catch {}
+      contents.push({
+        role: "user",
+        parts: [
+          {
+            functionResponse: {
+              name: msg.name || msg.tool_call_id || "tool",
+              response: { output },
+            },
+          },
+        ],
+      });
     } else {
-      const role = msg.role === "assistant" ? "model" : "user";
+      // user role
       const parts = convertContentToParts(msg.content);
-      contents.push({ role, parts });
+      if (parts.length > 0) {
+        contents.push({ role: "user", parts });
+      }
     }
   }
 
@@ -223,6 +266,8 @@ const generateContent = async (
   generationConfig = {},
   stream = false,
   keyObj = null,
+  tools = null,
+  toolConfig = null,
 ) => {
   if (keyObj && keyObj.type === "oauth") {
     const provider = keyObj.source || "antigravity";
@@ -236,12 +281,37 @@ const generateContent = async (
       stream,
       provider,
       keyObj.projectId,
+      tools,
+      toolConfig,
     );
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const { contents, systemInstruction } = mapMessagesToGemini(messages);
-  const model = genAI.getGenerativeModel({ model: modelName, systemInstruction, safetySettings });
+
+  // Convert OpenAI-format tools → Gemini tools schema
+  const geminiTools =
+    Array.isArray(tools) && tools.length > 0
+      ? [
+          {
+            functionDeclarations: tools
+              .filter((t) => t.type === "function" && t.function)
+              .map((t) => ({
+                name: t.function.name,
+                description: t.function.description || "",
+                parameters: t.function.parameters || { type: "object", properties: {} },
+              })),
+          },
+        ]
+      : undefined;
+
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    systemInstruction,
+    safetySettings,
+    ...(geminiTools ? { tools: geminiTools } : {}),
+    ...(toolConfig ? { toolConfig } : {}),
+  });
 
   if (stream) {
     return await model.generateContentStream({ contents, generationConfig });

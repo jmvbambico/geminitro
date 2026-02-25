@@ -48,8 +48,69 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
     const generationConfig = {};
     if (req.body.temperature !== undefined) generationConfig.temperature = req.body.temperature;
     if (req.body.max_tokens !== undefined) generationConfig.maxOutputTokens = req.body.max_tokens;
+    // max_completion_tokens is the newer OpenAI alias for max_tokens (used by Aider, Codex CLI)
+    if (req.body.max_completion_tokens !== undefined && req.body.max_tokens === undefined) {
+      generationConfig.maxOutputTokens = req.body.max_completion_tokens;
+    }
     if (req.body.top_p !== undefined) generationConfig.topP = req.body.top_p;
     if (req.body.top_k !== undefined) generationConfig.topK = req.body.top_k;
+
+    // Forward stop sequences
+    if (req.body.stop) {
+      generationConfig.stopSequences = Array.isArray(req.body.stop)
+        ? req.body.stop
+        : [req.body.stop];
+    }
+
+    // Forward response_format (JSON mode / structured output)
+    if (req.body.response_format?.type === "json_object") {
+      generationConfig.responseMimeType = "application/json";
+    } else if (
+      req.body.response_format?.type === "json_schema" &&
+      req.body.response_format.json_schema?.schema
+    ) {
+      generationConfig.responseMimeType = "application/json";
+      generationConfig.responseSchema = req.body.response_format.json_schema.schema;
+    }
+
+    // reasoning_effort → Gemini thinkingConfig (Codex CLI / OpenAI o-series)
+    // Also handles Anthropic/Kimi Code format: { thinking: { type: "enabled", budget_tokens: N } }
+    // Maps effort levels to approximate token budgets that Gemini supports.
+    const EFFORT_BUDGET = { high: 8192, medium: 4096, low: 1024, none: 0 };
+    let thinkingBudget = null;
+    if (req.body.reasoning_effort !== undefined) {
+      thinkingBudget = EFFORT_BUDGET[req.body.reasoning_effort] ?? null;
+    }
+    if (req.body.thinking?.type === "enabled") {
+      // Anthropic-format thinking param used by Kimi Code and some Claude-targeting agents
+      thinkingBudget = req.body.thinking.budget_tokens ?? req.body.thinking.budget ?? 8192;
+    }
+    if (thinkingBudget !== null) {
+      generationConfig.thinkingConfig = { thinkingBudget };
+    }
+
+    // Whether client wants per-stream usage stats (Codex CLI: stream_options.include_usage)
+    const includeUsage = req.body.stream_options?.include_usage === true;
+
+    // Map OpenAI tool_choice → Gemini toolConfig
+    const toolChoice = req.body.tool_choice;
+    let toolConfig = null;
+    if (toolChoice !== undefined && toolChoice !== null) {
+      if (toolChoice === "none") {
+        toolConfig = { functionCallingConfig: { mode: "NONE" } };
+      } else if (toolChoice === "required") {
+        toolConfig = { functionCallingConfig: { mode: "ANY" } };
+      } else if (toolChoice === "auto") {
+        toolConfig = { functionCallingConfig: { mode: "AUTO" } };
+      } else if (typeof toolChoice === "object" && toolChoice.type === "function") {
+        toolConfig = {
+          functionCallingConfig: {
+            mode: "ANY",
+            allowedFunctionNames: [toolChoice.function.name],
+          },
+        };
+      }
+    }
 
     if (req.body.stream) {
       const result = await geminiService.generateContent(
@@ -59,6 +120,8 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
         generationConfig,
         true,
         keyObj,
+        req.body.tools,
+        toolConfig,
       );
 
       res.setHeader("Content-Type", "text/event-stream");
@@ -72,10 +135,14 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
 
       const startTime = Date.now();
       try {
+        let sawToolCalls = false;
+        let lastUsageMetadata = null;
         for await (const chunk of result.stream) {
           if (!isClientConnected) break;
           let text = "";
           const functionCalls = chunk.functionCalls || [];
+          // Capture usage metadata from each chunk (last one wins — it contains cumulative totals)
+          if (chunk.usageMetadata) lastUsageMetadata = chunk.usageMetadata;
           try {
             text = chunk.text();
           } catch {}
@@ -86,6 +153,7 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
             delta.content = text;
           }
           if (functionCalls.length > 0) {
+            sawToolCalls = true;
             delta.tool_calls = functionCalls.map((fc, idx) => ({
               index: idx,
               id: `call_${requestId}_${idx}`,
@@ -116,6 +184,39 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
           }
         }
         if (isClientConnected) {
+          // Emit a terminal chunk with the correct finish_reason before [DONE].
+          // OpenCode and other agent frameworks rely on this to detect tool call
+          // boundaries — without it they may hang or miss the invocation signal.
+          const terminalFinishReason = sawToolCalls ? "tool_calls" : "stop";
+          res.write(
+            `data: ${JSON.stringify({
+              id: requestId,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: targetModel,
+              choices: [{ delta: {}, index: 0, finish_reason: terminalFinishReason }],
+            })}\n\n`,
+          );
+
+          // Emit usage chunk when requested (Codex CLI: stream_options.include_usage).
+          // Must come after the terminal finish_reason chunk and before [DONE].
+          if (includeUsage && lastUsageMetadata) {
+            res.write(
+              `data: ${JSON.stringify({
+                id: requestId,
+                object: "chat.completion.chunk",
+                created: Math.floor(Date.now() / 1000),
+                model: targetModel,
+                choices: [],
+                usage: {
+                  prompt_tokens: lastUsageMetadata.promptTokenCount || 0,
+                  completion_tokens: lastUsageMetadata.candidatesTokenCount || 0,
+                  total_tokens: lastUsageMetadata.totalTokenCount || 0,
+                },
+              })}\n\n`,
+            );
+          }
+
           res.write(`data: [DONE]\n\n`);
           res.end();
         }
@@ -141,6 +242,8 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
         generationConfig,
         false,
         keyObj,
+        req.body.tools,
+        toolConfig,
       );
       const text = result.response.text();
       const functionCalls = result.response.functionCalls || [];
@@ -165,6 +268,16 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
         }));
       }
 
+      // Extract usage metadata if available
+      let usage = undefined;
+      if (result.response.usageMetadata) {
+        usage = {
+          prompt_tokens: result.response.usageMetadata.promptTokenCount || 0,
+          completion_tokens: result.response.usageMetadata.candidatesTokenCount || 0,
+          total_tokens: result.response.usageMetadata.totalTokenCount || 0,
+        };
+      }
+
       res.json({
         id: requestId,
         object: "chat.completion",
@@ -173,6 +286,7 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
         choices: [
           { message, finish_reason: functionCalls.length > 0 ? "tool_calls" : "stop", index: 0 },
         ],
+        ...(usage ? { usage } : {}),
       });
       io.emit("stats_update", keyService.getSafeKeyPool());
       io.emit("stats_update_full", statsService.getStats());
@@ -550,7 +664,17 @@ module.exports = (io) => {
   router.get("/api/stats", (req, res) => res.json(statsService.getStats()));
 
   router.get("/api/settings", (req, res) => {
-    res.json({ autoUpdate: config.AUTO_UPDATE });
+    res.json({ autoUpdate: config.AUTO_UPDATE, verboseLogging: config.VERBOSE_LOGGING });
+  });
+
+  router.post("/api/settings/verbose", (req, res) => {
+    const { enabled } = req.body;
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ error: "enabled must be a boolean." });
+    }
+    config.VERBOSE_LOGGING = enabled;
+    logger.info(`Verbose logging ${enabled ? "enabled" : "disabled"}`);
+    res.json({ success: true, verboseLogging: enabled });
   });
 
   router.post("/api/settings", (req, res) => {

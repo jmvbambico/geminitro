@@ -94,7 +94,15 @@ const formatAccountType = (type: string, source: string | null) => {
   return "API Key";
 };
 
-function Switch({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label: string }) {
+function Switch({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+}) {
   return (
     <label className="flex items-center gap-2 cursor-pointer">
       <span className="text-xs text-muted-foreground">{label}</span>
@@ -144,6 +152,21 @@ export function Overview({
     return saved === null ? true : saved === "true";
   });
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set());
+  // Tracks IDs that have already been auto-expanded so the effect never fights
+  // with manual user collapses ("Collapse All" or per-item click).
+  const autoExpandedRef = useRef<Set<string>>(new Set());
+
+  // Sync verboseLogging from backend on mount
+  useEffect(() => {
+    api
+      .get("/api/settings")
+      .then((data: any) => {
+        if (typeof data?.verboseLogging === "boolean") {
+          setVerboseLogging(data.verboseLogging);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const [trafficHistory, setTrafficHistory] = useState<{ time: string; reqs: number }[]>([]);
   const latestTickRef = useRef(trafficTick);
@@ -156,31 +179,51 @@ export function Overview({
     // Stats are now managed by useSocket and passed via fullStats prop
   }, []);
 
-  // Persist verbose logging state
+  // Persist verbose logging state and sync to backend
   useEffect(() => {
     localStorage.setItem("geminitro_verbose_logging", String(verboseLogging));
   }, [verboseLogging]);
+
+  const handleVerboseChange = useCallback(async (enabled: boolean) => {
+    setVerboseLogging(enabled);
+    try {
+      await api.post("/api/settings/verbose", { enabled });
+    } catch {
+      // Silently ignore; the local UI state is still updated
+    }
+  }, []);
 
   // Persist health checks state
   useEffect(() => {
     localStorage.setItem("geminitro_show_health_checks", String(showHealthChecks));
   }, [showHealthChecks]);
 
-  // Auto-expand verbose logs
+  // Auto-expand NEW verbose log entries only.
+  // Uses a ref to track which IDs have already been auto-expanded so that
+  // manual collapses (per-item click or "Collapse All") are never overridden.
   useEffect(() => {
-    if (verboseLogging) {
-      const newExpanded = new Set(expandedLogs);
-      logs.forEach(log => {
-        const isVerboseLog = log.message.includes('Request:') || log.message.includes('Response:');
-        if (isVerboseLog && !newExpanded.has(log.id)) {
-          newExpanded.add(log.id);
-        }
-      });
-      if (newExpanded.size !== expandedLogs.size) {
-        setExpandedLogs(newExpanded);
+    if (!verboseLogging) return;
+
+    const toExpand: string[] = [];
+    logs.forEach((log) => {
+      const isVerboseLog = log.message.includes("Request:") || log.message.includes("Response:");
+      if (isVerboseLog && !autoExpandedRef.current.has(log.id)) {
+        autoExpandedRef.current.add(log.id);
+        toExpand.push(log.id);
       }
+    });
+
+    if (toExpand.length > 0) {
+      // Functional update: no stale closure on expandedLogs, so expandedLogs
+      // does NOT need to be in the dependency array.
+      setExpandedLogs((prev) => {
+        const next = new Set(prev);
+        toExpand.forEach((id) => next.add(id));
+        return next;
+      });
     }
-  }, [logs, verboseLogging, expandedLogs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logs, verboseLogging]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -226,7 +269,7 @@ export function Overview({
   };
 
   const toggleLogExpanded = (logId: string) => {
-    setExpandedLogs(prev => {
+    setExpandedLogs((prev) => {
       const next = new Set(prev);
       if (next.has(logId)) {
         next.delete(logId);
@@ -240,7 +283,7 @@ export function Overview({
   const displayLogs = useMemo(() => {
     let filtered = [...logs];
     if (!showHealthChecks) {
-      filtered = filtered.filter(log => !log.message.includes('/api/health'));
+      filtered = filtered.filter((log) => !log.message.includes("/api/health"));
     }
     return filtered.reverse();
   }, [logs, showHealthChecks]);
@@ -549,7 +592,9 @@ export function Overview({
                     </td>
                     <td className="px-3 py-2 text-right">
                       <button
-                        onClick={() => handleRemoveClick(k.tail, formatAccountType(k.type, k.source))}
+                        onClick={() =>
+                          handleRemoveClick(k.tail, formatAccountType(k.type, k.source))
+                        }
                         disabled={removing === k.tail}
                         title="Remove Key"
                         className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40"
@@ -573,14 +618,10 @@ export function Overview({
                 onChange={setShowHealthChecks}
                 label="Health Checks"
               />
-              <Switch
-                checked={verboseLogging}
-                onChange={setVerboseLogging}
-                label="Verbose"
-              />
+              <Switch checked={verboseLogging} onChange={handleVerboseChange} label="Verbose" />
             </div>
           </div>
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-h-0 overflow-hidden">
             {verboseLogging && (
               <button
                 onClick={() => setExpandedLogs(new Set())}
@@ -598,56 +639,75 @@ export function Overview({
                 border: "1px solid oklch(0.30 0.008 50)",
               }}
             >
-            {displayLogs.length === 0 ? (
-              <div style={{ color: "oklch(0.45 0.008 50)" }} className="italic">
-                No logs yet...
-              </div>
-            ) : (
-              displayLogs.map((log, idx) => {
-                const msgColor = idx % 2 === 0 ? chartColors[0] : chartColors[1];
-                const isExpanded = expandedLogs.has(log.id);
-                const isVerboseLog = verboseLogging && (log.message.includes('Request:') || log.message.includes('Response:'));
-                
-                return (
-                  <div
-                    key={log.id}
-                    className="rounded break-all"
-                    style={{
-                      backgroundColor: idx % 2 === 0 ? "oklch(0.25 0.008 50 / 0.6)" : "transparent",
-                    }}
-                  >
+              {displayLogs.length === 0 ? (
+                <div style={{ color: "oklch(0.45 0.008 50)" }} className="italic">
+                  No logs yet...
+                </div>
+              ) : (
+                displayLogs.map((log, idx) => {
+                  const msgColor = idx % 2 === 0 ? chartColors[0] : chartColors[1];
+                  const isExpanded = expandedLogs.has(log.id);
+                  const isVerboseLog =
+                    verboseLogging &&
+                    (log.message.includes("Request:") || log.message.includes("Response:"));
+
+                  return (
                     <div
-                      className={`flex gap-2 py-0.5 px-1.5 ${isVerboseLog ? 'cursor-pointer hover:bg-muted/20' : ''}`}
-                      onClick={() => isVerboseLog && toggleLogExpanded(log.id)}
+                      key={log.id}
+                      className="rounded break-all"
+                      style={{
+                        backgroundColor:
+                          idx % 2 === 0 ? "oklch(0.25 0.008 50 / 0.6)" : "transparent",
+                      }}
                     >
-                      <span
-                        className="shrink-0 tabular-nums"
-                        style={{ color: "oklch(0.45 0.008 50)" }}
+                      <div
+                        className={`flex gap-2 py-0.5 px-1.5 ${isVerboseLog ? "cursor-pointer hover:bg-muted/20" : ""}`}
+                        onClick={() => isVerboseLog && toggleLogExpanded(log.id)}
                       >
-                        {log.timestamp}
-                      </span>
-                      <span className="shrink-0 font-bold" style={{ color: "oklch(0.50 0.008 50)" }}>
-                        [{log.type}]
-                      </span>
-                      <span style={{ color: msgColor }}>
-                        {isVerboseLog && <span className="mr-2">{isExpanded ? '▼' : '▶'}</span>}
-                        {stripAnsi(log.message).split('\n')[0]}
-                      </span>
-                    </div>
-                    {isVerboseLog && isExpanded && (
-                      <div className="px-8 py-2 text-[9px] space-y-1" style={{ color: "oklch(0.60 0.008 50)" }}>
-                        {stripAnsi(log.message).split('\n').slice(1).map((line, i) => (
-                          <div key={i}>{line}</div>
-                        ))}
+                        <span
+                          className="shrink-0 tabular-nums"
+                          style={{ color: "oklch(0.45 0.008 50)" }}
+                        >
+                          {log.timestamp}
+                        </span>
+                        <span
+                          className="shrink-0 font-bold"
+                          style={{ color: "oklch(0.50 0.008 50)" }}
+                        >
+                          [{log.type}]
+                        </span>
+                        <span style={{ color: msgColor }}>
+                          {isVerboseLog && <span className="mr-2">{isExpanded ? "▼" : "▶"}</span>}
+                          {stripAnsi(log.message).split("\n")[0]}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
+                      {isVerboseLog && isExpanded && (
+                        <div
+                          className="px-8 py-1.5 text-[9px] space-y-0.5 overflow-y-auto"
+                          style={{
+                            color: "oklch(0.60 0.008 50)",
+                            maxHeight: "200px",
+                          }}
+                        >
+                          {stripAnsi(log.message)
+                            .split("\n")
+                            .slice(1)
+                            .map((line, i) => (
+                              <div key={i} className="whitespace-pre-wrap break-all">
+                                {line}
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
       </div>
+
       <AddKeyModal open={addKeyOpen} onClose={() => setAddKeyOpen(false)} />
 
       <Modal open={removeConfirmOpen} onClose={handleRemoveCancel} title="Remove Account">

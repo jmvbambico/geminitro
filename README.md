@@ -80,14 +80,31 @@ Already configured?
 
 Run `geminitro install` and select your agent. Supported agents:
 
-| Agent            | Config written                                          | How to use                                |
-| ---------------- | ------------------------------------------------------- | ----------------------------------------- |
-| **OpenCode**     | `~/.config/opencode/opencode.json` or `./opencode.json` | `--model geminitro/<model>`               |
-| **Continue.dev** | `~/.continue/config.yaml`                               | Select model in Continue's picker         |
-| **Aider**        | `~/.aider.conf.yml`                                     | Automatic — runs via GemiNitro by default |
-| **Codex CLI**    | `~/.codex/config.toml`                                  | Automatic — uses configured provider      |
-| **OpenCrabs**    | `~/.opencrabs/config.toml` + `keys.toml`                | Select custom provider                    |
-| **Kimi Code**    | `~/.kimi/config.toml`                                   | Uses `geminitro` provider                 |
+| Agent              | Config written                                          | How to use                                |
+| ------------------ | ------------------------------------------------------- | ----------------------------------------- |
+| **OpenCode**       | `~/.config/opencode/opencode.json` or `./opencode.json` | `--model geminitro/<model>`               |
+| **Continue.dev**   | `~/.continue/config.yaml`                               | Select model in Continue's picker         |
+| **Aider**          | `~/.aider.conf.yml`                                     | Automatic — runs via GemiNitro by default |
+| **Codex CLI**      | `~/.codex/config.toml`                                  | Automatic — uses configured provider      |
+| **OpenCrabs**      | `~/.opencrabs/config.toml` + `keys.toml`                | Select custom provider                    |
+| **Kimi Code**      | `~/.kimi/config.toml`                                   | Uses `geminitro` provider                 |
+| **Manual / Other** | `baseURL: http://localhost:7536/v1`                     | `apiKey: geminitro`                       |
+
+### Supported Capabilities
+
+GemiNitro provides a high-fidelity translation layer between the OpenAI spec and Gemini's native features, ensuring advanced coding agents work out-of-the-box.
+
+| Capability                  | OpenAI Format                              | Gemini/Claude Mapping                       | Status |
+| --------------------------- | ------------------------------------------ | ------------------------------------------- | ------ |
+| **Tool Calls**              | `tools[]`, `tool_choice`                   | `functionDeclarations`, `toolConfig`        | ✅     |
+| **Streaming Finish Reason** | `finish_reason: "tool_calls"`              | Signal emitted on terminal stream chunk     | ✅     |
+| **JSON Mode**               | `response_format: { type: "json_object" }` | `responseMimeType: "application/json"`      | ✅     |
+| **Reasoning / Thinking**    | `reasoning_effort` (o-series)              | `thinkingConfig` (budget tokens)            | ✅     |
+| **Extended Thinking**       | `thinking: { budget_tokens: N }`           | Claude `thinkingBudgetTokens` (passthrough) | ✅     |
+| **Usage Stats**             | `stream_options.include_usage`             | `usageMetadata` (tracked per-chunk)         | ✅     |
+| **Stop Sequences**          | `stop: ["\n\nHuman:"]`                     | `stopSequences`                             | ✅     |
+| **Vision**                  | `image_url`                                | `inlineData` / `image` parts                | ✅     |
+| **Structured Outputs**      | `response_format: { type: "json_schema" }` | `responseSchema` (Gemini 1.5/2.0)           | ✅     |
 
 ### OpenCode
 

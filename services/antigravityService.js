@@ -284,6 +284,8 @@ async function generateContentAntigravity(
   stream = false,
   provider = "antigravity",
   projectIdFromKey = null,
+  tools = null,
+  toolConfig = null,
 ) {
   const { accessToken } = await oauthService.getAccessTokenFromRefreshToken(refreshToken, provider);
 
@@ -336,11 +338,61 @@ async function generateContentAntigravity(
     if (msg.role === "system") {
       const parts = convertContentToParts(msg.content);
       systemParts.push(...parts);
+    } else if (msg.role === "assistant") {
+      // Assistant messages may have text content AND/OR tool_calls.
+      const parts = [];
+
+      if (msg.content) {
+        parts.push(...convertContentToParts(msg.content));
+      }
+
+      // OpenAI-format tool_calls → Gemini functionCall parts
+      if (Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls) {
+          if (tc.type === "function") {
+            let args = {};
+            try {
+              args = JSON.parse(tc.function.arguments || "{}");
+            } catch {}
+            parts.push({ functionCall: { name: tc.function.name, args } });
+          }
+        }
+      }
+
+      if (parts.length > 0) {
+        contents.push({ role: "model", parts });
+      }
+    } else if (msg.role === "tool") {
+      // OpenAI tool result → Gemini functionResponse part
+      let output = msg.content;
+      try {
+        output = JSON.parse(msg.content);
+      } catch {}
+      contents.push({
+        role: "user",
+        parts: [
+          {
+            functionResponse: {
+              name: msg.name || msg.tool_call_id || "tool",
+              response: { output },
+            },
+          },
+        ],
+      });
     } else {
-      const role = msg.role === "assistant" ? "model" : "user";
+      // user role
       const parts = convertContentToParts(msg.content);
-      contents.push({ role, parts });
+      if (parts.length > 0) {
+        contents.push({ role: "user", parts });
+      }
     }
+  }
+
+  // Claude forbids ending the conversation on a model/assistant turn
+  // (assistant prefill). Strip any trailing model turns so the last
+  // entry is always from the user side.
+  while (contents.length > 0 && contents[contents.length - 1].role === "model") {
+    contents.pop();
   }
 
   // Model resolution: gemini-3-pro requires -low or -high suffix
@@ -368,12 +420,41 @@ async function generateContentAntigravity(
     requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
   };
 
+  // Forward tools as Gemini functionDeclarations
+  if (Array.isArray(tools) && tools.length > 0) {
+    const functionDeclarations = tools
+      .filter((t) => t.type === "function" && t.function)
+      .map((t) => ({
+        name: t.function.name,
+        description: t.function.description || "",
+        parameters: t.function.parameters || { type: "object", properties: {} },
+      }));
+    if (functionDeclarations.length > 0) {
+      requestBody.request.tools = [{ functionDeclarations }];
+    }
+  }
+
+  // Forward tool_choice as Gemini toolConfig
+  if (toolConfig) {
+    requestBody.request.toolConfig = toolConfig;
+  }
+
   if (systemParts.length > 0) {
     // Antigravity system instructions use role: "user"
     requestBody.request.systemInstruction = {
       role: "user",
       parts: systemParts,
     };
+  }
+
+  // For Claude thinking models (e.g. claude-opus-4-6-thinking), inject the thinking budget
+  // at the request root level. The cloudcode-pa endpoint expects it as thinkingBudgetTokens
+  // rather than inside generationConfig.
+  if (generationConfig?.thinkingConfig?.thinkingBudget !== undefined) {
+    const budget = generationConfig.thinkingConfig.thinkingBudget;
+    if (budget > 0) {
+      requestBody.thinkingBudgetTokens = budget;
+    }
   }
 
   const response = await fetch(url, {
@@ -414,14 +495,18 @@ async function generateContentAntigravity(
                     if (data.candidates && data.candidates[0] && data.candidates[0].content) {
                       return data.candidates[0].content.parts
                         .map((p) => {
-                          // Extract text from standard parts
+                          // Extract text from standard parts; skip thought/thinking parts
+                          if (p.thought) return "";
                           return p.text || "";
                         })
                         .join("");
                     }
                     if (data.content && Array.isArray(data.content)) {
-                      // Anthropic-style content array
-                      return data.content.map((p) => p.text || "").join("");
+                      // Anthropic-style content array — filter out thinking blocks
+                      return data.content
+                        .filter((p) => p.type !== "thinking")
+                        .map((p) => p.text || "")
+                        .join("");
                     }
                     return "";
                   },
@@ -429,6 +514,8 @@ async function generateContentAntigravity(
                     data.candidates?.[0]?.content?.parts
                       ?.filter((p) => p.functionCall)
                       .map((p) => p.functionCall) || [],
+                  // Expose usage metadata so the proxy can emit OpenAI-format usage stats
+                  usageMetadata: data.usageMetadata || null,
                 };
               } catch {}
             }
@@ -446,7 +533,12 @@ async function generateContentAntigravity(
     response: {
       text: () => {
         if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-          return data.candidates[0].content.parts.map((p) => p.text || "").join("");
+          return data.candidates[0].content.parts
+            .map((p) => {
+              if (p.thought) return "";
+              return p.text || "";
+            })
+            .join("");
         }
         return "";
       },
@@ -454,6 +546,7 @@ async function generateContentAntigravity(
         data.candidates?.[0]?.content?.parts
           ?.filter((p) => p.functionCall)
           .map((p) => p.functionCall) || [],
+      usageMetadata: data.usageMetadata || null,
     },
   };
 }
