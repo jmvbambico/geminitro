@@ -639,7 +639,7 @@ export function Overview({
                     setExpandedLogs(new Set(allVerboseLogIds));
                   }
                 }}
-                className="absolute top-[-26px] right-0 z-10 w-6 h-6 flex items-center justify-center rounded bg-muted/60 border border-border text-muted-foreground hover:text-foreground hover:border-foreground transition-all text-xs font-bold shadow-sm"
+                className="absolute top-[-22px] right-2 z-10 w-7 h-6 flex items-center justify-center rounded-t-lg border-x border-t bg-[oklch(0.22_0.008_50)] border-[oklch(0.30_0.008_50)] text-white/50 hover:text-white hover:bg-[oklch(0.26_0.008_50)] transition-all text-sm font-bold shadow-sm"
                 title={expandedLogs.size > 0 ? "Collapse All" : "Expand All"}
               >
                 {expandedLogs.size > 0 ? "−" : "+"}
