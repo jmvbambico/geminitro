@@ -602,6 +602,14 @@ const ALLOWED_SCHEMA_KEYS = [
   "minimum",
   "maximum",
   "multipleOf",
+  "default",
+  "pattern",
+  "const",
+  "anyOf",
+  "oneOf",
+  "allOf",
+  "definitions",
+  "$ref",
 ];
 
 function sanitizeToolParameters(params) {

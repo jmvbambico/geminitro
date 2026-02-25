@@ -677,7 +677,7 @@ export function Overview({
                           [{log.type}]
                         </span>
                         <span style={{ color: msgColor }}>
-                          {isVerboseLog && <span className="mr-2">{isExpanded ? "▼" : "▶"}</span>}
+                          {isVerboseLog && <span className="mr-2">{isExpanded ? "▲" : "▼"}</span>}
                           {stripAnsi(log.message).split("\n")[0]}
                         </span>
                       </div>
