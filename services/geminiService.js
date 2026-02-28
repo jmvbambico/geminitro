@@ -400,9 +400,7 @@ async function generateContentWithApiKey(
 
   requestBody.safetySettings = safetySettings;
   // Apply timeout based on streaming vs non-streaming
-  const timeout = stream
-    ? config.TIMEOUT_READ_STREAMING
-    : config.TIMEOUT_READ_NON_STREAMING;
+  const timeout = stream ? config.TIMEOUT_READ_STREAMING : config.TIMEOUT_READ_NON_STREAMING;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout * 1000);
 
@@ -443,7 +441,8 @@ async function generateContentWithApiKey(
                 try {
                   const data = JSON.parse(line.slice(6));
                   yield {
-      text: () => data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "",
+                    text: () =>
+                      data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "",
                     functionCalls:
                       data.candidates?.[0]?.content?.parts
                         ?.filter((p) => p.functionCall)
@@ -473,7 +472,7 @@ async function generateContentWithApiKey(
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === "AbortError") {
-      throw new Error(`Gemini API request timeout after ${timeout}s`);
+      throw new Error(`Gemini API request timeout after ${timeout}s`, { cause: error });
     }
     throw error;
   }

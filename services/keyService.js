@@ -57,6 +57,8 @@ const loadKeys = () => {
           status: "active",
           usage: 0,
           errors: 0,
+          failureCount: 0,
+          failuresByModel: {},
           lastUsed: 0,
           supportedModels: migratedModels,
         }
@@ -279,11 +281,61 @@ const removeKey = (keyFragment) => {
   return true;
 };
 
-const updateKeyStatus = (key, status) => {
+/**
+ * Get cooldown duration based on consecutive failure count.
+ * Escalating pattern: 10s → 30s → 60s → 120s
+ * @param {number} failureCount - Number of consecutive failures
+ * @returns {number} Cooldown duration in seconds
+ */
+const getCooldownDuration = (failureCount) => {
+  const durations = [10, 30, 60, 120];
+  const index = Math.min(Math.max(failureCount - 1, 0), durations.length - 1);
+  return durations[index];
+};
+
+/**
+ * Update key status and apply escalating cooldowns on failures.
+ * @param {string} key - API key
+ * @param {string} status - New status ('active', 'cooldown', 'invalid')
+ * @param {string|null} model - Model that triggered the status change (optional)
+ */
+const updateKeyStatus = (key, status, model = null) => {
   const keyObj = keyPool.find((k) => k.key === key);
-  if (keyObj) {
+  if (!keyObj) return;
+
+  if (status === "cooldown") {
+    // Increment failure count for this model
+    if (model) {
+      keyObj.failuresByModel[model] = (keyObj.failuresByModel[model] || 0) + 1;
+      keyObj.failureCount = Math.max(...Object.values(keyObj.failuresByModel));
+    } else {
+      keyObj.failureCount++;
+    }
+
+    const cooldownSeconds = getCooldownDuration(keyObj.failureCount);
+    keyObj.status = "cooldown";
+    keyObj.cooldownUntil = Date.now() + cooldownSeconds * 1000;
+    keyObj.lastUsed = Date.now();
+
+    logger.info(
+      `Key cooldown: ${keyObj.failureCount} failures → ${cooldownSeconds}s timeout (model: ${model || "all"})`,
+    );
+  } else if (status === "active") {
+    // Reset failure count on success
+    if (model && keyObj.failuresByModel[model]) {
+      delete keyObj.failuresByModel[model];
+      const modelFailureCounts = Object.values(keyObj.failuresByModel);
+      keyObj.failureCount = modelFailureCounts.length > 0 ? Math.max(...modelFailureCounts) : 0;
+    } else {
+      keyObj.failureCount = 0;
+      keyObj.failuresByModel = {};
+    }
+    keyObj.status = "active";
+    keyObj.lastUsed = Date.now();
+  } else {
+    // Other statuses (invalid, etc.)
     keyObj.status = status;
-    if (status === "active" || status === "cooldown") keyObj.lastUsed = Date.now();
+    keyObj.lastUsed = Date.now();
   }
 };
 
@@ -573,6 +625,7 @@ module.exports = {
   getSafeKeyPool,
   getCooldownRemaining,
   getPoolStatus,
+  getCooldownDuration,
   detectAntigravityAccounts,
   importAntigravityAccounts,
   getAntigravityAccounts,
