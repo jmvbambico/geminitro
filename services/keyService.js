@@ -7,6 +7,7 @@ const antigravityService = require("./antigravityService");
 const statsService = require("./statsService");
 
 let keyPool = [];
+let currentRotationMode = config.ROTATION_MODE;
 
 const ensureDataDir = () => {
   if (!fs.existsSync(config.DATA_DIR)) {
@@ -112,11 +113,42 @@ const saveKeys = () => {
   }
 };
 
-const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) => {
-  let bestKey = null;
-  let minUsage = Infinity;
+/**
+ * Set rotation mode for key selection.
+ * @param {string} mode - 'balanced' (LRU) or 'sequential' (exhaust quota)
+ */
+const setRotationMode = (mode) => {
+  if (!["balanced", "sequential"].includes(mode)) {
+    throw new Error(`Invalid rotation mode: ${mode}`);
+  }
+  currentRotationMode = mode;
+};
 
+/**
+ * Compare two keys based on current rotation mode.
+ * @param {object} a - First key
+ * @param {object} b - Second key
+ * @returns {number} Comparison result (-1, 0, 1)
+ */
+const compareKeysByRotationMode = (a, b) => {
+  if (currentRotationMode === "balanced") {
+    // Balanced: prefer least-used (LRU)
+    return a.usage - b.usage;
+  } else {
+    // Sequential: prefer most-used (exhaust quota)
+    return b.usage - a.usage;
+  }
+};
+
+const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) => {
   const byType = (k) => (keyType ? k.type === keyType : true);
+
+  // Helper to select best key from filtered array
+  const selectBest = (keys) => {
+    if (keys.length === 0) return null;
+    keys.sort(compareKeysByRotationMode);
+    return keys[0];
+  };
 
   // 1. First Pass: Try to find an active key that EXPLICITLY supports the requested model
   const explicitMatch = keyPool.filter(
@@ -128,14 +160,8 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
       Array.isArray(k.supportedModels) &&
       k.supportedModels.includes(desiredModel),
   );
-
-  for (const k of explicitMatch) {
-    if (k.usage < minUsage) {
-      minUsage = k.usage;
-      bestKey = k;
-    }
-  }
-  if (bestKey) return bestKey;
+  const bestExplicit = selectBest(explicitMatch);
+  if (bestExplicit) return bestExplicit;
 
   // 2. Second Pass: Try to find an active key with UNKNOWN support (supportedModels is empty)
   // This is typical for standard API keys or newly added keys before discovery.
@@ -148,27 +174,16 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
       byType(k) &&
       (!Array.isArray(k.supportedModels) || k.supportedModels.length === 0),
   );
-
-  for (const k of unknownMatch) {
-    if (k.usage < minUsage) {
-      minUsage = k.usage;
-      bestKey = k;
-    }
-  }
-  if (bestKey) return bestKey;
+  const bestUnknown = selectBest(unknownMatch);
+  if (bestUnknown) return bestUnknown;
 
   // 3. Special Case: If NO desiredModel was specified, we can return any active key of the right type
   if (!desiredModel) {
     const anyActive = keyPool.filter(
       (k) => k.status === "active" && !excludeKeys.includes(k.key) && byType(k),
     );
-    for (const k of anyActive) {
-      if (k.usage < minUsage) {
-        minUsage = k.usage;
-        bestKey = k;
-      }
-    }
-    if (bestKey) return bestKey;
+    const bestAny = selectBest(anyActive);
+    if (bestAny) return bestAny;
   }
 
   // 4. Cooldown Recovery: If no active keys, try to recover a cooldown key
@@ -626,6 +641,7 @@ module.exports = {
   getCooldownRemaining,
   getPoolStatus,
   getCooldownDuration,
+  setRotationMode,
   detectAntigravityAccounts,
   importAntigravityAccounts,
   getAntigravityAccounts,

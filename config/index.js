@@ -34,6 +34,9 @@ module.exports = {
   TIMEOUT_WRITE: parseInt(process.env.TIMEOUT_WRITE, 10) || 30,
   TIMEOUT_READ_STREAMING: parseInt(process.env.TIMEOUT_READ_STREAMING, 10) || 180,
   TIMEOUT_READ_NON_STREAMING: parseInt(process.env.TIMEOUT_READ_NON_STREAMING, 10) || 600,
+
+  // Rotation mode: 'balanced' (LRU) or 'sequential' (exhaust one key first)
+  ROTATION_MODE: process.env.ROTATION_MODE || "balanced",
   MODEL_FETCH_INTERVAL: 3600000,
   INITIAL_MODEL_FETCH_DELAY: 2000,
   PROXY_API_KEY: process.env.PROXY_API_KEY || "geminitro",
