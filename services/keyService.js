@@ -10,6 +10,7 @@ const QuotaService = require("./quotaService");
 
 let keyPool = [];
 let currentRotationMode = config.ROTATION_MODE;
+let rotationTolerance = config.ROTATION_TOLERANCE || 0; // 0 = deterministic, 1 = fully random
 const quotaService = new QuotaService(config.QUOTA_GROUPS);
 
 const ensureDataDir = () => {
@@ -129,6 +130,48 @@ const setRotationMode = (mode) => {
 };
 
 /**
+ * Set rotation tolerance for weighted random selection.
+ * @param {number} tolerance - Value between 0 (deterministic) and 1 (fully random)
+ * - 0.0: Always pick optimal key (deterministic)
+ * - 0.1: 10% variance - pick from top ~10% of candidates
+ * - 1.0: Fully random selection from all keys
+ */
+const setRotationTolerance = (tolerance) => {
+  if (typeof tolerance !== "number" || isNaN(tolerance) || tolerance < 0 || tolerance > 1) {
+    throw new Error(`Invalid rotation tolerance: ${tolerance}. Must be between 0 and 1.`);
+  }
+  rotationTolerance = tolerance;
+};
+
+/**
+ * Select a key from an array with optional weighted randomness.
+ * @param {object[]} keys - Pre-filtered and sorted keys
+ * @returns {object} Selected key
+ * @private
+ */
+const _selectKeyWithTolerance = (keys) => {
+  if (keys.length === 0) return null;
+  if (keys.length === 1) return keys[0];
+
+  // If tolerance is 0, return the first (optimal) key
+  if (rotationTolerance === 0) {
+    return keys[0];
+  }
+
+  // Sort keys by current rotation mode
+  keys.sort(compareKeysByRotationMode);
+
+  // Calculate the range of acceptable keys based on tolerance
+  // tolerance = 0.1 means pick from top 10% of keys
+  const rangeSize = Math.max(1, Math.ceil(keys.length * rotationTolerance));
+  const candidates = keys.slice(0, rangeSize);
+
+  // Random selection from candidates
+  const randomIndex = Math.floor(Math.random() * candidates.length);
+  return candidates[randomIndex];
+};
+
+/**
  * Compare two keys based on current rotation mode.
  * @param {object} a - First key
  * @param {object} b - Second key
@@ -149,9 +192,7 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
 
   // Helper to select best key from filtered array
   const selectBest = (keys) => {
-    if (keys.length === 0) return null;
-    keys.sort(compareKeysByRotationMode);
-    return keys[0];
+    return _selectKeyWithTolerance(keys);
   };
 
   // 1. First Pass: Try to find an active key that EXPLICITLY supports the requested model
@@ -700,6 +741,8 @@ module.exports = {
   getPoolStatus,
   getCooldownDuration,
   setRotationMode,
+  setRotationTolerance,
+  _selectKeyWithTolerance,
   acquireKey,
   releaseKey,
   quotaService,

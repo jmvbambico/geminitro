@@ -38,6 +38,9 @@ module.exports = {
   // Rotation mode: 'balanced' (LRU) or 'sequential' (exhaust one key first)
   ROTATION_MODE: process.env.ROTATION_MODE || "balanced",
 
+  // Rotation tolerance: 0 = deterministic, 0.1 = 10% variance, 1 = fully random
+  ROTATION_TOLERANCE: parseFloat(process.env.ROTATION_TOLERANCE) || 0,
+
   // Concurrency limits per key
   MAX_CONCURRENT_REQUESTS_PER_KEY: parseInt(process.env.MAX_CONCURRENT_REQUESTS_PER_KEY, 10) || 3,
 
