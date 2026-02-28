@@ -1,2 +1,4 @@
 npx lint-staged
 npm audit --audit-level=moderate
+npm test
+npm audit --audit-level=moderate
