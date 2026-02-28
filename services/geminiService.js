@@ -399,69 +399,84 @@ async function generateContentWithApiKey(
   }
 
   requestBody.safetySettings = safetySettings;
+  // Apply timeout based on streaming vs non-streaming
+  const timeout = stream
+    ? config.TIMEOUT_READ_STREAMING
+    : config.TIMEOUT_READ_NON_STREAMING;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout * 1000);
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify(requestBody),
-  });
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API error ${response.status}: ${errorText}`);
-  }
+    clearTimeout(timeoutId);
 
-  if (stream) {
-    return {
-      stream: (async function* () {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini API error ${response.status}: ${errorText}`);
+    }
+    if (stream) {
+      return {
+        stream: (async function* () {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
 
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                yield {
-                  text: () =>
-                    data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "",
-                  functionCalls:
-                    data.candidates?.[0]?.content?.parts
-                      ?.filter((p) => p.functionCall)
-                      ?.map((p) => p.functionCall) || [],
-                };
-              } catch {
-                // Skip malformed JSON
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+                  yield {
+      text: () => data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "",
+                    functionCalls:
+                      data.candidates?.[0]?.content?.parts
+                        ?.filter((p) => p.functionCall)
+                        ?.map((p) => p.functionCall) || [],
+                  };
+                } catch {
+                  // Skip malformed JSON
+                }
               }
             }
           }
-        }
-      })(),
-    };
-  }
+        })(),
+      };
+    }
 
-  const data = await response.json();
-  return {
-    response: {
-      text: () => data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "",
-      functionCalls:
-        data.candidates?.[0]?.content?.parts
-          ?.filter((p) => p.functionCall)
-          ?.map((p) => p.functionCall) || [],
-      usageMetadata: data.usageMetadata || null,
-    },
-  };
+    const data = await response.json();
+    return {
+      response: {
+        text: () => data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "",
+        functionCalls:
+          data.candidates?.[0]?.content?.parts
+            ?.filter((p) => p.functionCall)
+            ?.map((p) => p.functionCall) || [],
+        usageMetadata: data.usageMetadata || null,
+      },
+    };
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === "AbortError") {
+      throw new Error(`Gemini API request timeout after ${timeout}s`);
+    }
+    throw error;
+  }
 }
 
 module.exports = {

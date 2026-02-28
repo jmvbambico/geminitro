@@ -28,6 +28,12 @@ module.exports = {
   MODELS_FILE: path.join(DATA_DIR, "models.json"),
   GEMINI_API_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/models",
   KEY_COOLDOWN_TIME: 60000,
+
+  // Fine-grained timeout configuration (in seconds)
+  TIMEOUT_CONNECT: parseInt(process.env.TIMEOUT_CONNECT, 10) || 30,
+  TIMEOUT_WRITE: parseInt(process.env.TIMEOUT_WRITE, 10) || 30,
+  TIMEOUT_READ_STREAMING: parseInt(process.env.TIMEOUT_READ_STREAMING, 10) || 180,
+  TIMEOUT_READ_NON_STREAMING: parseInt(process.env.TIMEOUT_READ_NON_STREAMING, 10) || 600,
   MODEL_FETCH_INTERVAL: 3600000,
   INITIAL_MODEL_FETCH_DELAY: 2000,
   PROXY_API_KEY: process.env.PROXY_API_KEY || "geminitro",
