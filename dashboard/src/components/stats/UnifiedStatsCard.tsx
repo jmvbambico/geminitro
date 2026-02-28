@@ -3,6 +3,7 @@ import { useUnifiedStats } from "@/hooks/useUnifiedStats";
 import { useUsageCaps } from "@/hooks/useUsageCaps";
 import { UsageProgressBar } from "./UsageProgressBar";
 import { UsageCapsModal } from "./UsageCapsModal";
+import { BarChart3 } from "lucide-react";
 import { ChevronDown, ChevronUp, Settings } from "lucide-react";
 
 interface TimeRange {
@@ -68,7 +69,8 @@ export function UnifiedStatsCard() {
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <h2 className="text-base font-semibold">📊 Model Usage (All Accounts)</h2>
+            <BarChart3 size={18} className="text-muted-foreground" />
+            <h2 className="text-base font-semibold">Model Usage (All Accounts)</h2>
             <button
               onClick={() => setExpanded(!expanded)}
               className="p-1 rounded hover:bg-muted transition-colors"
