@@ -1,3 +1,4 @@
+import { UnifiedStatsCard } from "@/components/stats/UnifiedStatsCard";
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useHealth } from "@/hooks/useHealth";
 import type { KeyEntry, LogEntry } from "@/hooks/useSocket";
@@ -378,6 +379,9 @@ export function Overview({
           sub={`over ${dailyEntries.length} day${dailyEntries.length !== 1 ? "s" : ""} `}
         />
       </div>
+
+      {/* Unified Model Usage Stats */}
+      <UnifiedStatsCard />
 
       {/* Row 2: Live Traffic Area Chart */}
       <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">

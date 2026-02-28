@@ -708,6 +708,13 @@ module.exports = (io) => {
     res.json(allProgress);
   });
 
+  router.post("/api/stats/caps/config", (req, res) => {
+    const { resetTime, timezone } = req.body;
+    if (resetTime) usageCapService.setResetTime(resetTime);
+    if (timezone) usageCapService.setTimezone(timezone);
+    res.json({ success: true });
+  });
+
   router.get("/api/config-template", async (req, res) => {
     if (geminiService.getDynamicModels().length === 0) await geminiService.fetchGoogleModels();
     res.json(geminiService.getDynamicModels());

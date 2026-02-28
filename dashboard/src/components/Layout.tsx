@@ -201,6 +201,9 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [showApiKey, setShowApiKey] = useState(false);
   const [saved, setSaved] = useState(false);
   const [autoUpdate, setAutoUpdate] = useState<boolean | null>(null);
+  const [resetTime, setResetTime] = useState("00:00");
+  const [timezone, setTimezone] = useState("local");
+  const [capsSaving, setCapsSaving] = useState(false);
   const [setupPreference, setSetupPreference] = useState<"browser" | "terminal" | null>(null);
   const [autoUpdateSaving, setAutoUpdateSaving] = useState(false);
 
@@ -213,6 +216,10 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       .catch(() => {});
     api.get("/api/preferences").then((data) => {
       setSetupPreference(data.setupMethod || null);
+    });
+    api.get("/api/stats/caps").then((data) => {
+      if (data.resetTime) setResetTime(data.resetTime);
+      if (data.timezone) setTimezone(data.timezone);
     });
   }, []);
 
@@ -238,6 +245,16 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     if (!res.error) {
       setSetupPreference(value);
     }
+  };
+
+  const saveCapSettings = async () => {
+    setCapsSaving(true);
+    try {
+      await api.post("/api/stats/caps/config", { resetTime, timezone });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {}
+    setCapsSaving(false);
   };
 
   return (
@@ -363,6 +380,59 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
             </label>
+          </div>
+        </div>
+
+        {/* Usage Cap Settings */}
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Usage Cap Reset Schedule
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Configure when daily usage caps should reset (applies to all models)
+          </p>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                Reset Time
+              </label>
+              <input
+                type="time"
+                value={resetTime}
+                onChange={(e) => setResetTime(e.target.value)}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                Timezone
+              </label>
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="local">Local Time (System)</option>
+                <option value="UTC">UTC</option>
+                <option value="America/New_York">America/New_York (EST/EDT)</option>
+                <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
+                <option value="America/Chicago">America/Chicago (CST/CDT)</option>
+                <option value="America/Denver">America/Denver (MST/MDT)</option>
+                <option value="Europe/London">Europe/London (GMT/BST)</option>
+                <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
+                <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                <option value="Asia/Shanghai">Asia/Shanghai (CST)</option>
+                <option value="Asia/Saigon">Asia/Saigon (ICT)</option>
+                <option value="Australia/Sydney">Australia/Sydney (AEDT/AEST)</option>
+              </select>
+            </div>
+            <button
+              onClick={saveCapSettings}
+              disabled={capsSaving}
+              className="w-full px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+            >
+              {capsSaving ? "Saving..." : saved ? "Saved ✓" : "Save Cap Settings"}
+            </button>
           </div>
         </div>
       </div>

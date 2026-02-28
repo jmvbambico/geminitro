@@ -52,5 +52,5 @@ export function useSocket() {
     };
   }, []);
 
-  return { keys, logs, trafficTick, connected, fullStats };
+  return { keys, logs, trafficTick, connected, fullStats, socket: socketRef.current };
 }

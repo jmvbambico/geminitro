@@ -306,6 +306,17 @@ const setResetTime = (resetTime) => {
 };
 
 /**
+ * Update timezone configuration.
+ * @param {string} timezone - Timezone string (e.g., 'local', 'UTC', 'America/New_York')
+ */
+const setTimezone = (timezone) => {
+  capsConfig.timezone = timezone;
+  saveCaps();
+  scheduleNextReset();
+  logger.info(`Timezone updated to: ${timezone}`);
+};
+
+/**
  * Get current usage stats (for debugging/monitoring).
  * @returns {object} Current usage object
  */
@@ -325,5 +336,6 @@ module.exports = {
   getAllProgress,
   resetAllUsage,
   setResetTime,
+  setTimezone,
   getCurrentUsage,
 };
