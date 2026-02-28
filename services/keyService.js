@@ -30,6 +30,69 @@ const ensureDataDir = () => {
   }
 };
 
+/**
+ * Normalize a credential string for comparison.
+ * @param {string} credential - API key or refresh token
+ * @returns {string} Normalized credential (trimmed)
+ */
+const normalizeCredential = (credential) => {
+  return credential.trim();
+};
+
+/**
+ * Generate a fingerprint for a credential to detect duplicates.
+ * For API keys: use the key itself
+ * For OAuth: use email+source (same account from same provider)
+ * @param {object} keyObj - Key object
+ * @returns {string} Fingerprint for duplicate detection
+ */
+const getCredentialFingerprint = (keyObj) => {
+  if (keyObj.type === "oauth") {
+    // OAuth: email + source uniquely identifies an account
+    return `oauth:${keyObj.source}:${keyObj.email}`;
+  }
+  // API keys: the key itself is the fingerprint
+  return `api_key:${normalizeCredential(keyObj.key)}`;
+};
+
+/**
+ * Detect duplicate credentials in the key pool.
+ * @returns {object} { duplicates: Array<{fingerprint, keys: Array}>, uniqueKeys: number }
+ */
+const detectDuplicates = () => {
+  const fingerprintMap = new Map();
+
+  // Group keys by fingerprint
+  for (const keyObj of keyPool) {
+    const fingerprint = getCredentialFingerprint(keyObj);
+    if (!fingerprintMap.has(fingerprint)) {
+      fingerprintMap.set(fingerprint, []);
+    }
+    fingerprintMap.get(fingerprint).push(keyObj);
+  }
+
+  // Find duplicates (fingerprints with multiple keys)
+  const duplicates = [];
+  for (const [fingerprint, keys] of fingerprintMap.entries()) {
+    if (keys.length > 1) {
+      duplicates.push({
+        fingerprint,
+        keys: keys.map((k) => ({
+          key: k.key.slice(-6), // Only show last 6 chars
+          type: k.type,
+          email: k.email,
+          source: k.source,
+        })),
+      });
+    }
+  }
+
+  return {
+    duplicates,
+    uniqueKeys: fingerprintMap.size,
+  };
+};
+
 const loadKeys = () => {
   ensureDataDir();
   try {
@@ -778,6 +841,9 @@ module.exports = {
   setRotationTolerance,
   _selectKeyWithTolerance,
   getConcurrencyLimit,
+  normalizeCredential,
+  getCredentialFingerprint,
+  detectDuplicates,
   acquireKey,
   releaseKey,
   quotaService,
