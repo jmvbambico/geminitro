@@ -13,6 +13,17 @@ let currentRotationMode = config.ROTATION_MODE;
 let rotationTolerance = config.ROTATION_TOLERANCE || 0; // 0 = deterministic, 1 = fully random
 const quotaService = new QuotaService(config.QUOTA_GROUPS);
 
+/**
+ * Calculate concurrency limit for a priority tier.
+ * @param {string} tier - Priority tier (free, standard, premium, enterprise)
+ * @param {number} baseLimit - Base concurrency limit
+ * @returns {number} Adjusted concurrency limit
+ */
+const getConcurrencyLimit = (tier, baseLimit) => {
+  const multiplier = config.PRIORITY_TIER_MULTIPLIERS[tier] || 1.0;
+  return Math.floor(baseLimit * multiplier);
+};
+
 const ensureDataDir = () => {
   if (!fs.existsSync(config.DATA_DIR)) {
     fs.mkdirSync(config.DATA_DIR, { recursive: true });
@@ -59,13 +70,16 @@ const loadKeys = () => {
           type: keyType,
           email: typeof k === "object" ? k.email : null,
           source: keySource,
+          priorityTier: "standard", // Default tier for loaded keys
           status: "active",
           usage: 0,
           errors: 0,
           failureCount: 0,
           failuresByModel: {},
           concurrentRequests: 0,
-          semaphore: new Semaphore(config.MAX_CONCURRENT_REQUESTS_PER_KEY),
+          semaphore: new Semaphore(
+            getConcurrencyLimit("standard", config.MAX_CONCURRENT_REQUESTS_PER_KEY),
+          ),
           supportedModels: migratedModels,
         }
       );
@@ -281,20 +295,31 @@ const releaseKey = (keyObj) => {
 };
 
 const addKey = (key, options = {}) => {
-  const { type = "api_key", email = null, models = [], source = null } = options;
+  const {
+    type = "api_key",
+    email = null,
+    models = [],
+    source = null,
+    priorityTier = "standard",
+  } = options;
   if (key && !keyPool.find((k) => k.key === key)) {
+    const concurrencyLimit = getConcurrencyLimit(
+      priorityTier,
+      config.MAX_CONCURRENT_REQUESTS_PER_KEY,
+    );
     keyPool.push({
       key,
       type,
       email,
       source,
+      priorityTier,
       status: "active",
       usage: 0,
       errors: 0,
       failureCount: 0,
       failuresByModel: {},
       concurrentRequests: 0,
-      semaphore: new Semaphore(config.MAX_CONCURRENT_REQUESTS_PER_KEY),
+      semaphore: new Semaphore(concurrencyLimit),
       lastUsed: 0,
       supportedModels: Array.isArray(models) ? models : [],
     });
@@ -356,13 +381,16 @@ const addOAuthToken = async (refreshToken, provider, email = null) => {
       type: "oauth",
       email,
       source: provider,
+      priorityTier: "standard",
       status: "active",
       usage: 0,
       errors: 0,
       failureCount: 0,
       failuresByModel: {},
       concurrentRequests: 0,
-      semaphore: new Semaphore(config.MAX_CONCURRENT_REQUESTS_PER_KEY),
+      semaphore: new Semaphore(
+        getConcurrencyLimit("standard", config.MAX_CONCURRENT_REQUESTS_PER_KEY),
+      ),
       lastUsed: 0,
       supportedModels,
     });
@@ -593,13 +621,16 @@ const importAntigravityAccounts = async () => {
 
     keyPool.push({
       ...account,
+      priorityTier: "standard",
       status: "active",
       usage: 0,
       errors: 0,
       failureCount: 0,
       failuresByModel: {},
       concurrentRequests: 0,
-      semaphore: new Semaphore(config.MAX_CONCURRENT_REQUESTS_PER_KEY),
+      semaphore: new Semaphore(
+        getConcurrencyLimit("standard", config.MAX_CONCURRENT_REQUESTS_PER_KEY),
+      ),
       lastUsed: 0,
       supportedModels,
     });
@@ -689,13 +720,16 @@ const importGeminiCliAccounts = async () => {
 
     keyPool.push({
       ...account,
+      priorityTier: "standard",
       status: "active",
       usage: 0,
       errors: 0,
       failureCount: 0,
       failuresByModel: {},
       concurrentRequests: 0,
-      semaphore: new Semaphore(config.MAX_CONCURRENT_REQUESTS_PER_KEY),
+      semaphore: new Semaphore(
+        getConcurrencyLimit("standard", config.MAX_CONCURRENT_REQUESTS_PER_KEY),
+      ),
       lastUsed: 0,
       supportedModels,
     });
@@ -743,6 +777,7 @@ module.exports = {
   setRotationMode,
   setRotationTolerance,
   _selectKeyWithTolerance,
+  getConcurrencyLimit,
   acquireKey,
   releaseKey,
   quotaService,

@@ -44,6 +44,14 @@ module.exports = {
   // Concurrency limits per key
   MAX_CONCURRENT_REQUESTS_PER_KEY: parseInt(process.env.MAX_CONCURRENT_REQUESTS_PER_KEY, 10) || 3,
 
+  // Priority tier concurrency multipliers
+  PRIORITY_TIER_MULTIPLIERS: {
+    free: 0.5, // Free tier gets 50% of base concurrency
+    standard: 1.0, // Standard tier (default)
+    premium: 2.0, // Premium tier gets 2x concurrency
+    enterprise: 3.0, // Enterprise tier gets 3x concurrency
+  },
+
   // Quota groups: models that share quota limits (cool down together)
   QUOTA_GROUPS: {
     "antigravity-claude": (
