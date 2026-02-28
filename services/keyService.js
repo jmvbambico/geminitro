@@ -6,9 +6,11 @@ const logger = require("../utils/logger");
 const antigravityService = require("./antigravityService");
 const statsService = require("./statsService");
 const Semaphore = require("./semaphore");
+const QuotaService = require("./quotaService");
 
 let keyPool = [];
 let currentRotationMode = config.ROTATION_MODE;
+const quotaService = new QuotaService(config.QUOTA_GROUPS);
 
 const ensureDataDir = () => {
   if (!fs.existsSync(config.DATA_DIR)) {
@@ -360,21 +362,28 @@ const updateKeyStatus = (key, status, model = null) => {
   if (!keyObj) return;
 
   if (status === "cooldown") {
-    // Increment failure count for this model
-    if (model) {
-      keyObj.failuresByModel[model] = (keyObj.failuresByModel[model] || 0) + 1;
-      keyObj.failureCount = Math.max(...Object.values(keyObj.failuresByModel));
-    } else {
-      keyObj.failureCount++;
+    // Check if model is in a quota group (models sharing quota should cool down together)
+    const modelsToBlock = model ? quotaService.handleQuotaError(keyObj.key, model) : [model];
+
+    // Increment failure count for all models in the quota group
+    for (const modelToBlock of modelsToBlock) {
+      if (modelToBlock) {
+        keyObj.failuresByModel[modelToBlock] = (keyObj.failuresByModel[modelToBlock] || 0) + 1;
+      }
     }
+
+    // Global failure count is the max across all models
+    const failureCounts = Object.values(keyObj.failuresByModel);
+    keyObj.failureCount = failureCounts.length > 0 ? Math.max(...failureCounts) : 1;
 
     const cooldownSeconds = getCooldownDuration(keyObj.failureCount);
     keyObj.status = "cooldown";
     keyObj.cooldownUntil = Date.now() + cooldownSeconds * 1000;
     keyObj.lastUsed = Date.now();
 
+    const modelsStr = modelsToBlock.length > 1 ? modelsToBlock.join(", ") : model || "all";
     logger.info(
-      `Key cooldown: ${keyObj.failureCount} failures → ${cooldownSeconds}s timeout (model: ${model || "all"})`,
+      `Key cooldown: ${keyObj.failureCount} failures → ${cooldownSeconds}s timeout (models: ${modelsStr})`,
     );
   } else if (status === "active") {
     // Reset failure count on success
@@ -693,6 +702,7 @@ module.exports = {
   setRotationMode,
   acquireKey,
   releaseKey,
+  quotaService,
   detectAntigravityAccounts,
   importAntigravityAccounts,
   getAntigravityAccounts,

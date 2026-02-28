@@ -40,6 +40,16 @@ module.exports = {
 
   // Concurrency limits per key
   MAX_CONCURRENT_REQUESTS_PER_KEY: parseInt(process.env.MAX_CONCURRENT_REQUESTS_PER_KEY, 10) || 3,
+
+  // Quota groups: models that share quota limits (cool down together)
+  QUOTA_GROUPS: {
+    "antigravity-claude": (
+      process.env.QUOTA_GROUPS_ANTIGRAVITY_CLAUDE || "claude-sonnet-4-5,claude-opus-4-5"
+    ).split(","),
+    "gemini-pro": (process.env.QUOTA_GROUPS_GEMINI_PRO || "gemini-2.0-pro,gemini-2.5-pro").split(
+      ",",
+    ),
+  },
   MODEL_FETCH_INTERVAL: 3600000,
   INITIAL_MODEL_FETCH_DELAY: 2000,
   PROXY_API_KEY: process.env.PROXY_API_KEY || "geminitro",
