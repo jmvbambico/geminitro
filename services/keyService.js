@@ -5,9 +5,9 @@ const config = require("../config");
 const logger = require("../utils/logger");
 const antigravityService = require("./antigravityService");
 const statsService = require("./statsService");
+const usageCapService = require("./usageCapService");
 const Semaphore = require("./semaphore");
 const QuotaService = require("./quotaService");
-
 let keyPool = [];
 let currentRotationMode = config.ROTATION_MODE;
 let rotationTolerance = config.ROTATION_TOLERANCE || 0; // 0 = deterministic, 1 = fully random
@@ -265,6 +265,12 @@ const compareKeysByRotationMode = (a, b) => {
 };
 
 const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) => {
+  // Check if model is at usage cap
+  if (desiredModel && usageCapService.isAtCap(desiredModel)) {
+    logger.warn(`Model ${desiredModel} at usage cap - trying next key`);
+    return null;
+  }
+
   const byType = (k) => (keyType ? k.type === keyType : true);
 
   // Helper to select best key from filtered array

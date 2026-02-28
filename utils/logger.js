@@ -18,6 +18,8 @@ const setIo = (io) => {
   ioInstance = io;
 };
 
+const getIo = () => ioInstance;
+
 const log = (type, message, data = null) => {
   const timestamp = new Date().toLocaleTimeString("en-US", { hour12: false });
   const colorFn = LOG_COLORS[type] || chalk.white;
@@ -191,6 +193,7 @@ const warn = (message) => {
 
 module.exports = {
   setIo,
+  getIo,
   log,
   http,
   httpVerbose,

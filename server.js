@@ -19,6 +19,7 @@ if (fs.existsSync(oldCachePath)) {
 const keyService = require("./services/keyService");
 const geminiService = require("./services/geminiService");
 const statsService = require("./services/statsService");
+const usageCapService = require("./services/usageCapService");
 const updateService = require("./services/updateService");
 const apiRoutes = require("./routes/apiRoutes");
 const logger = require("./utils/logger");
@@ -103,6 +104,9 @@ if (fs.existsSync(dashboardPath)) {
 }
 
 app.use("/", apiRoutes(io));
+
+// Initialize usage cap service
+usageCapService.initialize();
 
 app.use((err, req, res, _next) => {
   logger.error("Unhandled error", err);

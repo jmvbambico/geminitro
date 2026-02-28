@@ -99,6 +99,7 @@ const recordRequest = (model, accountType, accountId, timestamp = Date.now()) =>
       errors: 0,
       accountTypes: {},
       timestamps: [],
+      accounts: {},
     };
   }
 
@@ -106,12 +107,19 @@ const recordRequest = (model, accountType, accountId, timestamp = Date.now()) =>
   modelStat.totalRequests++;
   modelStat.timestamps.push(timestamp);
 
-  // Track by account type
   if (!modelStat.accountTypes[accountType]) {
     modelStat.accountTypes[accountType] = 0;
   }
   modelStat.accountTypes[accountType]++;
 
+  if (!modelStat.accounts[accountId]) {
+    modelStat.accounts[accountId] = {
+      type: accountType,
+      requests: 0,
+      errors: 0,
+    };
+  }
+  modelStat.accounts[accountId].requests++;
   scheduleSave();
 };
 
@@ -130,6 +138,11 @@ const recordError = (model, accountType, accountId, _errorMessage) => {
   }
 
   stats.modelStats[cleanModel].errors++;
+
+  if (stats.modelStats[cleanModel].accounts[accountId]) {
+    stats.modelStats[cleanModel].accounts[accountId].errors++;
+  }
+
   scheduleSave();
 };
 

@@ -2,6 +2,7 @@ const express = require("express");
 const keyService = require("../services/keyService");
 const geminiService = require("../services/geminiService");
 const statsService = require("../services/statsService");
+const usageCapService = require("../services/usageCapService");
 const config = require("../config");
 const logger = require("../utils/logger");
 const oauthService = require("../services/oauthService");
@@ -250,6 +251,10 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
 
       keyService.incrementKeyUsage(currentKey);
       statsService.trackRequest(currentKey, targetModel, true);
+
+      // Increment usage cap counter
+      usageCapService.incrementUsage(targetModel);
+
       io.emit("traffic_update");
       logger.proxyResponse(targetModel, "success", Date.now() - startTime);
 
@@ -646,6 +651,61 @@ module.exports = (io) => {
       logger.error("Manual OAuth token addition failed", e);
       res.status(500).json({ error: e.message });
     }
+  });
+
+  // Unified stats endpoint
+  router.get("/api/stats/unified", (req, res) => {
+    const { since, model } = req.query;
+    const options = {};
+
+    if (since) {
+      options.since = parseInt(since, 10);
+    }
+
+    const stats = statsService.getModelStats(options);
+
+    if (model) {
+      const cleanModel = model.replace("models/", "");
+      return res.json({ [cleanModel]: stats[cleanModel] || null });
+    }
+
+    res.json(stats);
+  });
+
+  // Usage cap endpoints
+  router.get("/api/stats/caps", (req, res) => {
+    res.json(usageCapService.getAllCaps());
+  });
+
+  router.post("/api/stats/caps", (req, res) => {
+    try {
+      usageCapService.addOrUpdateCap(req.body);
+      io.emit("usage:cap-updated", usageCapService.getAllCaps());
+      res.json({ success: true });
+    } catch (e) {
+      logger.error("Failed to add/update usage cap", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  router.delete("/api/stats/caps/:model", (req, res) => {
+    const removed = usageCapService.removeCap(req.params.model);
+    if (removed) {
+      io.emit("usage:cap-updated", usageCapService.getAllCaps());
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: "Cap not found" });
+    }
+  });
+
+  router.get("/api/stats/caps/check/:model", (req, res) => {
+    const progress = usageCapService.getCapProgress(req.params.model);
+    res.json(progress);
+  });
+
+  router.get("/api/stats/caps/progress", (req, res) => {
+    const allProgress = usageCapService.getAllProgress();
+    res.json(allProgress);
   });
 
   router.get("/api/config-template", async (req, res) => {

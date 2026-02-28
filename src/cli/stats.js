@@ -63,14 +63,44 @@ const run = async () => {
   );
   console.log(`  ${"Models".padEnd(14)} ${health.models}`);
 
+  // Legacy model usage (old tracking)
   if (stats.modelUsage && Object.keys(stats.modelUsage).length > 0) {
-    console.log(chalk.bold("\n  Top Models\n"));
+    console.log(chalk.bold("\n  Top Models (Legacy)\n"));
     const sorted = Object.entries(stats.modelUsage)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 6);
     const peak = sorted[0][1];
     for (const [model, count] of sorted) {
       console.log(`  ${chalk.gray(model.padEnd(38))} ${bar(count, peak, 12)}  ${count}`);
+    }
+  }
+
+  // Unified model statistics (new tracking - API keys + OAuth accounts)
+  if (stats.modelStats && Object.keys(stats.modelStats).length > 0) {
+    console.log(chalk.bold("\n  Unified Model Usage (All Account Types)\n"));
+    const sorted = Object.entries(stats.modelStats)
+      .sort((a, b) => b[1].totalRequests - a[1].totalRequests)
+      .slice(0, 6);
+    const peak = sorted[0]?.[1]?.totalRequests || 1;
+
+    for (const [model, modelStat] of sorted) {
+      const errorRate = (modelStat.errorRate * 100).toFixed(1);
+      const errorColor = parseFloat(errorRate) > 10 ? chalk.red : chalk.gray;
+
+      // Account type breakdown
+      const accountBreakdown = Object.entries(modelStat.accountTypes || {})
+        .map(([type, count]) => {
+          const label = type === "api_key" ? "API" : type === "oauth" ? "OAuth" : type;
+          return `${label}:${count}`;
+        })
+        .join(" ");
+
+      console.log(
+        `  ${chalk.gray(model.padEnd(30))} ${bar(modelStat.totalRequests, peak, 12)}  ${modelStat.totalRequests} req`,
+      );
+      console.log(
+        `  ${chalk.gray(" ".repeat(30))} ${chalk.dim(accountBreakdown)}  ${errorColor(errorRate + "% err")}`,
+      );
     }
   }
 
