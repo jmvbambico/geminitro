@@ -5,6 +5,7 @@ const config = require("../config");
 const logger = require("../utils/logger");
 const antigravityService = require("./antigravityService");
 const statsService = require("./statsService");
+const Semaphore = require("./semaphore");
 
 let keyPool = [];
 let currentRotationMode = config.ROTATION_MODE;
@@ -60,7 +61,8 @@ const loadKeys = () => {
           errors: 0,
           failureCount: 0,
           failuresByModel: {},
-          lastUsed: 0,
+          concurrentRequests: 0,
+          semaphore: new Semaphore(config.MAX_CONCURRENT_REQUESTS_PER_KEY),
           supportedModels: migratedModels,
         }
       );
@@ -156,6 +158,7 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
       k.status === "active" &&
       !excludeKeys.includes(k.key) &&
       byType(k) &&
+      k.concurrentRequests < config.MAX_CONCURRENT_REQUESTS_PER_KEY &&
       desiredModel &&
       Array.isArray(k.supportedModels) &&
       k.supportedModels.includes(desiredModel),
@@ -172,6 +175,7 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
       k.status === "active" &&
       !excludeKeys.includes(k.key) &&
       byType(k) &&
+      k.concurrentRequests < config.MAX_CONCURRENT_REQUESTS_PER_KEY &&
       (!Array.isArray(k.supportedModels) || k.supportedModels.length === 0),
   );
   const bestUnknown = selectBest(unknownMatch);
@@ -180,7 +184,11 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
   // 3. Special Case: If NO desiredModel was specified, we can return any active key of the right type
   if (!desiredModel) {
     const anyActive = keyPool.filter(
-      (k) => k.status === "active" && !excludeKeys.includes(k.key) && byType(k),
+      (k) =>
+        k.status === "active" &&
+        !excludeKeys.includes(k.key) &&
+        byType(k) &&
+        k.concurrentRequests < config.MAX_CONCURRENT_REQUESTS_PER_KEY,
     );
     const bestAny = selectBest(anyActive);
     if (bestAny) return bestAny;
@@ -204,6 +212,31 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
   return null;
 };
 
+/**
+ * Acquire a concurrency slot for a key. Waits if limit is reached.
+ * @param {object} keyObj - Key object from keyPool
+ * @returns {Promise<void>}
+ */
+const acquireKey = async (keyObj) => {
+  if (!keyObj || !keyObj.semaphore) {
+    throw new Error("Invalid key object or missing semaphore");
+  }
+  await keyObj.semaphore.acquire();
+  keyObj.concurrentRequests++;
+};
+
+/**
+ * Release a concurrency slot for a key.
+ * @param {object} keyObj - Key object from keyPool
+ */
+const releaseKey = (keyObj) => {
+  if (!keyObj || !keyObj.semaphore) {
+    throw new Error("Invalid key object or missing semaphore");
+  }
+  keyObj.semaphore.release();
+  keyObj.concurrentRequests--;
+};
+
 const addKey = (key, options = {}) => {
   const { type = "api_key", email = null, models = [], source = null } = options;
   if (key && !keyPool.find((k) => k.key === key)) {
@@ -215,6 +248,10 @@ const addKey = (key, options = {}) => {
       status: "active",
       usage: 0,
       errors: 0,
+      failureCount: 0,
+      failuresByModel: {},
+      concurrentRequests: 0,
+      semaphore: new Semaphore(config.MAX_CONCURRENT_REQUESTS_PER_KEY),
       lastUsed: 0,
       supportedModels: Array.isArray(models) ? models : [],
     });
@@ -279,6 +316,10 @@ const addOAuthToken = async (refreshToken, provider, email = null) => {
       status: "active",
       usage: 0,
       errors: 0,
+      failureCount: 0,
+      failuresByModel: {},
+      concurrentRequests: 0,
+      semaphore: new Semaphore(config.MAX_CONCURRENT_REQUESTS_PER_KEY),
       lastUsed: 0,
       supportedModels,
     });
@@ -505,6 +546,10 @@ const importAntigravityAccounts = async () => {
       status: "active",
       usage: 0,
       errors: 0,
+      failureCount: 0,
+      failuresByModel: {},
+      concurrentRequests: 0,
+      semaphore: new Semaphore(config.MAX_CONCURRENT_REQUESTS_PER_KEY),
       lastUsed: 0,
       supportedModels,
     });
@@ -597,6 +642,10 @@ const importGeminiCliAccounts = async () => {
       status: "active",
       usage: 0,
       errors: 0,
+      failureCount: 0,
+      failuresByModel: {},
+      concurrentRequests: 0,
+      semaphore: new Semaphore(config.MAX_CONCURRENT_REQUESTS_PER_KEY),
       lastUsed: 0,
       supportedModels,
     });
@@ -642,6 +691,8 @@ module.exports = {
   getPoolStatus,
   getCooldownDuration,
   setRotationMode,
+  acquireKey,
+  releaseKey,
   detectAntigravityAccounts,
   importAntigravityAccounts,
   getAntigravityAccounts,

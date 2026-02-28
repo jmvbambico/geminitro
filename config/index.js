@@ -37,6 +37,9 @@ module.exports = {
 
   // Rotation mode: 'balanced' (LRU) or 'sequential' (exhaust one key first)
   ROTATION_MODE: process.env.ROTATION_MODE || "balanced",
+
+  // Concurrency limits per key
+  MAX_CONCURRENT_REQUESTS_PER_KEY: parseInt(process.env.MAX_CONCURRENT_REQUESTS_PER_KEY, 10) || 3,
   MODEL_FETCH_INTERVAL: 3600000,
   INITIAL_MODEL_FETCH_DELAY: 2000,
   PROXY_API_KEY: process.env.PROXY_API_KEY || "geminitro",
