@@ -454,10 +454,10 @@ export function Overview({
               </AreaChart>
             </ResponsiveContainer>
           </div>
-
-          {/* Unified Model Usage Stats */}
-          <UnifiedStatsCard />
         </div>
+
+        {/* Unified Model Usage Stats */}
+        <UnifiedStatsCard />
       </div>
 
       {/* Row 3: 7-Day Chart + Pie Chart */}

@@ -18,15 +18,17 @@ const run = async () => {
   const base = `http://localhost:${PORT}`;
   const headers = { Authorization: `Bearer ${PROXY_API_KEY}` };
 
-  let health, stats;
+  let health, stats, capsProgress;
   try {
-    const [hr, sr] = await Promise.all([
+    const [hr, sr, cr] = await Promise.all([
       fetch(`${base}/api/health`),
       fetch(`${base}/api/stats`, { headers }),
+      fetch(`${base}/api/stats/caps/progress`, { headers }),
     ]);
     if (!hr.ok) throw new Error("no response");
     health = await hr.json();
     stats = await sr.json();
+    capsProgress = cr.ok ? await cr.json() : [];
   } catch {
     console.error(chalk.red(`\n  ✗ Cannot reach GemiNitro on :${PORT} — is it running?\n`));
     console.error(chalk.gray("  Start with: geminitro start\n"));
@@ -64,9 +66,9 @@ const run = async () => {
   console.log(`  ${"Models".padEnd(14)} ${health.models}`);
 
   // Legacy model usage (old tracking)
-  if (stats.modelUsage && Object.keys(stats.modelUsage).length > 0) {
-    console.log(chalk.bold("\n  Top Models (Legacy)\n"));
-    const sorted = Object.entries(stats.modelUsage)
+  if (stats.models && Object.keys(stats.models).length > 0) {
+    console.log(chalk.bold("\n  Top Models\n"));
+    const sorted = Object.entries(stats.models)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 6);
     const peak = sorted[0][1];
@@ -114,6 +116,23 @@ const run = async () => {
       const errPart = day.errors > 0 ? `  ${chalk.red(day.errors + " err")}` : "";
       console.log(
         `  ${chalk.gray(date.padEnd(12))} ${bar(day.requests, peak, 14)}  ${day.requests} req${errPart}`,
+      );
+    }
+  }
+
+  // Usage Caps
+  if (capsProgress && capsProgress.length > 0) {
+    console.log(chalk.bold("\n  Usage Caps\n"));
+    for (const cap of capsProgress) {
+      const barColor = cap.atCap ? chalk.red : cap.atWarning ? chalk.yellow : chalk.green;
+      const statusText = cap.atCap
+        ? chalk.red("CAP REACHED")
+        : cap.atWarning
+          ? chalk.yellow("WARNING")
+          : chalk.gray("OK");
+
+      console.log(
+        `  ${chalk.gray(cap.model.padEnd(30))} ${barColor(bar(cap.current, cap.limit, 12))}  ${cap.current}/${cap.limit}  ${statusText}`,
       );
     }
   }
