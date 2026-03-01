@@ -350,6 +350,23 @@ const getCurrentUsage = () => {
   return { ...currentUsage };
 };
 
+/**
+ * Reset all state for testing purposes only.
+ * WARNING: Only use in tests!
+ */
+const resetForTesting = () => {
+  currentUsage = {};
+  capsConfig = {
+    caps: [],
+    resetTime: "00:00",
+    timezone: "local",
+  };
+  if (resetTimerId) {
+    clearTimeout(resetTimerId);
+    resetTimerId = null;
+  }
+};
+
 module.exports = {
   initialize,
   getAllCaps,
@@ -364,4 +381,5 @@ module.exports = {
   setResetTime,
   setTimezone,
   getCurrentUsage,
+  resetForTesting,
 };
