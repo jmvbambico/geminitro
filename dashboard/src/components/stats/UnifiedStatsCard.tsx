@@ -64,7 +64,7 @@ export function UnifiedStatsCard() {
   const maxRequests = topModels[0]?.[1]?.totalRequests || 1;
 
   return (
-    <>
+    <div>
       <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
@@ -234,6 +234,6 @@ export function UnifiedStatsCard() {
 
       {/* Usage Caps Modal */}
       <UsageCapsModal open={capsModalOpen} onClose={() => setCapsModalOpen(false)} />
-    </>
+    </div>
   );
 }

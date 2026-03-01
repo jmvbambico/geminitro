@@ -392,11 +392,8 @@ export function Overview({
         />
       </div>
 
-      {/* Row 2: Unified Stats + Live Traffic */}
+      {/* Row 2: Live Traffic + Unified Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Unified Model Usage Stats */}
-        <UnifiedStatsCard />
-
         {/* Live Traffic Area Chart */}
         <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-6">
@@ -457,6 +454,9 @@ export function Overview({
               </AreaChart>
             </ResponsiveContainer>
           </div>
+
+          {/* Unified Model Usage Stats */}
+          <UnifiedStatsCard />
         </div>
       </div>
 
@@ -649,8 +649,6 @@ export function Overview({
             <div className="flex items-center gap-2">
               <FileText size={18} className="text-muted-foreground" />
               <h2 className="text-base font-semibold">System Logs</h2>
-            </div>
-            <div className="flex items-center gap-3">
               {verboseLogging && (
                 <button
                   onClick={() => {
