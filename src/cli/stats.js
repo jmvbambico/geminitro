@@ -65,6 +65,23 @@ const run = async () => {
   );
   console.log(`  ${"Models".padEnd(14)} ${health.models}`);
 
+  // Usage Caps
+  if (capsProgress && capsProgress.length > 0) {
+    console.log(chalk.bold("\n  Usage Caps\n"));
+    for (const cap of capsProgress) {
+      const barColor = cap.atCap ? chalk.red : cap.atWarning ? chalk.yellow : chalk.green;
+      const statusText = cap.atCap
+        ? chalk.red("CAP REACHED")
+        : cap.atWarning
+          ? chalk.yellow("WARNING")
+          : chalk.gray("OK");
+
+      console.log(
+        `  ${chalk.gray(cap.model.padEnd(30))} ${barColor(bar(cap.current, cap.limit, 12))}  ${cap.current}/${cap.limit}  ${statusText}`,
+      );
+    }
+  }
+
   // Legacy model usage (old tracking)
   if (stats.models && Object.keys(stats.models).length > 0) {
     console.log(chalk.bold("\n  Top Models\n"));
@@ -116,23 +133,6 @@ const run = async () => {
       const errPart = day.errors > 0 ? `  ${chalk.red(day.errors + " err")}` : "";
       console.log(
         `  ${chalk.gray(date.padEnd(12))} ${bar(day.requests, peak, 14)}  ${day.requests} req${errPart}`,
-      );
-    }
-  }
-
-  // Usage Caps
-  if (capsProgress && capsProgress.length > 0) {
-    console.log(chalk.bold("\n  Usage Caps\n"));
-    for (const cap of capsProgress) {
-      const barColor = cap.atCap ? chalk.red : cap.atWarning ? chalk.yellow : chalk.green;
-      const statusText = cap.atCap
-        ? chalk.red("CAP REACHED")
-        : cap.atWarning
-          ? chalk.yellow("WARNING")
-          : chalk.gray("OK");
-
-      console.log(
-        `  ${chalk.gray(cap.model.padEnd(30))} ${barColor(bar(cap.current, cap.limit, 12))}  ${cap.current}/${cap.limit}  ${statusText}`,
       );
     }
   }

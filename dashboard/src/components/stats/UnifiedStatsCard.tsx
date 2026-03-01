@@ -64,8 +64,8 @@ export function UnifiedStatsCard() {
   const maxRequests = topModels[0]?.[1]?.totalRequests || 1;
 
   return (
-    <div>
-      <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
+    <div style={{ height: 220 }}>
+      <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm h-full overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -89,15 +89,15 @@ export function UnifiedStatsCard() {
           </button>
         </div>
 
-        {/* Collapsed View */}
+        {/* Collapsed View - fills available space */}
         {!expanded && (
-          <div className="space-y-3">
+          <div className="space-y-3 overflow-y-auto flex-1">
             {topModels.map(([modelName, modelStat]) => {
               const capProgress = getProgress(modelName);
               const barWidth = (modelStat.totalRequests / maxRequests) * 100;
 
               return (
-                <div key={modelName} className="space-y-1">
+                <div key={modelName} className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground font-medium truncate flex-1">
                       {modelName}
@@ -106,21 +106,25 @@ export function UnifiedStatsCard() {
                       {modelStat.totalRequests} req
                     </span>
                   </div>
-                  <div className="h-2 rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all"
-                      style={{ width: `${barWidth}%` }}
+
+                  {/* Usage quota meter */}
+                  {capProgress ? (
+                    <UsageProgressBar
+                      current={capProgress.current}
+                      limit={capProgress.limit}
+                      alertThreshold={capProgress.alertThreshold}
                     />
-                  </div>
-                  {capProgress && capProgress.atWarning && (
-                    <p className="text-xs text-yellow-600">
-                      ⚡ {capProgress.percentage.toFixed(0)}% of cap
-                    </p>
+                  ) : (
+                    <div className="h-2 rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all"
+                        style={{ width: `${barWidth}%` }}
+                      />
+                    </div>
                   )}
                 </div>
               );
             })}
-
             <div className="pt-2 border-t border-border/50 text-sm text-muted-foreground">
               Total: {totalRequests.toLocaleString()} requests • {modelEntries.length} models •{" "}
               {(avgErrorRate * 100).toFixed(1)}% avg errors
@@ -128,9 +132,9 @@ export function UnifiedStatsCard() {
           </div>
         )}
 
-        {/* Expanded View */}
+        {/* Expanded View - fills available space */}
         {expanded && (
-          <div className="space-y-4">
+          <div className="space-y-4 flex-1 flex flex-col overflow-hidden">
             {/* Filters */}
             <div className="flex gap-3">
               <select
