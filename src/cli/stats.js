@@ -18,15 +18,17 @@ const run = async () => {
   const base = `http://localhost:${PORT}`;
   const headers = { Authorization: `Bearer ${PROXY_API_KEY}` };
 
-  let health, stats;
+  let health, stats, quotaSummary;
   try {
-    const [hr, sr] = await Promise.all([
+    const [hr, sr, qr] = await Promise.all([
       fetch(`${base}/api/health`),
       fetch(`${base}/api/stats`, { headers }),
+      fetch(`${base}/api/stats/quota-summary`, { headers }),
     ]);
     if (!hr.ok) throw new Error("no response");
     health = await hr.json();
     stats = await sr.json();
+    quotaSummary = qr.ok ? await qr.json() : null;
   } catch {
     console.error(chalk.red(`\n  ✗ Cannot reach GemiNitro on :${PORT} — is it running?\n`));
     console.error(chalk.gray("  Start with: geminitro start\n"));
@@ -37,13 +39,48 @@ const run = async () => {
   const successRate = total > 0 ? ((stats.totalSuccess / total) * 100).toFixed(1) : "0.0";
   const rateColor = parseFloat(successRate) >= 90 ? chalk.green : chalk.yellow;
 
+  // Display quota summary FIRST (before Live Stats header)
+  if (quotaSummary && quotaSummary.quotas && quotaSummary.quotas.length > 0) {
+    console.log(chalk.bold("\n  Usage Quotas\n"));
+    console.log(chalk.gray("  " + "─".repeat(56)));
+
+    for (const quota of quotaSummary.quotas) {
+      // Calculate percentage for color
+      const percentage = quota.percentage || 0;
+      const barColor = quota.atCap ? chalk.red : quota.atWarning ? chalk.yellow : chalk.green;
+
+      // Model name
+      console.log(`\n  ${chalk.white(quota.model)}`);
+
+      // Combined usage with meter
+      const usageLine = `Combined: ${quota.current}/${quota.limit} requests`;
+      const barWidth = 12;
+      const filled = quota.limit > 0 ? Math.round((quota.current / quota.limit) * barWidth) : 0;
+      const meter = barColor("█".repeat(filled)) + chalk.gray("░".repeat(barWidth - filled));
+      const percentText = percentage.toFixed(2) + "%";
+      console.log(`    ${chalk.gray(usageLine.padEnd(40))} ${meter}  ${percentText}`);
+
+      // Reset time
+      const resetLine = `Resets in: ${quota.resetInFormatted}`;
+      console.log(`    ${chalk.gray(resetLine)}`);
+
+      // Account breakdown
+      const accountParts = [];
+      if (quota.accounts.apiKeys > 0) accountParts.push(`${quota.accounts.apiKeys} API keys`);
+      if (quota.accounts.oauth > 0) accountParts.push(`${quota.accounts.oauth} OAuth`);
+      const accountLine = `Accounts: ${accountParts.join(", ")} (${quota.accounts.total} total)`;
+      console.log(`    ${chalk.gray(accountLine)}`);
+    }
+
+    console.log("");
+  }
+
   console.log(chalk.bold("\n  GemiNitro — Live Stats\n"));
-  console.log(chalk.gray("  " + "─".repeat(56)));
+  console.log(chalk.gray("  " + "-".repeat(56)));
   console.log(
     `  ${chalk.cyan("Version")}    v${health.version}    ${chalk.cyan("Uptime")}  ${fmtUptime(health.uptime)}    ${chalk.cyan("Port")}  ${PORT}`,
   );
-  console.log(chalk.gray("  " + "─".repeat(56)));
-
+  console.log(chalk.gray("  " + "-".repeat(56)));
   console.log(chalk.bold("\n  Requests\n"));
   console.log(`  ${chalk.white("Total".padEnd(14))} ${total}`);
   console.log(
@@ -63,14 +100,44 @@ const run = async () => {
   );
   console.log(`  ${"Models".padEnd(14)} ${health.models}`);
 
-  if (stats.modelUsage && Object.keys(stats.modelUsage).length > 0) {
+  // Legacy model usage (old tracking)
+  if (stats.models && Object.keys(stats.models).length > 0) {
     console.log(chalk.bold("\n  Top Models\n"));
-    const sorted = Object.entries(stats.modelUsage)
+    const sorted = Object.entries(stats.models)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 6);
     const peak = sorted[0][1];
     for (const [model, count] of sorted) {
       console.log(`  ${chalk.gray(model.padEnd(38))} ${bar(count, peak, 12)}  ${count}`);
+    }
+  }
+
+  // Unified model statistics (new tracking - API keys + OAuth accounts)
+  if (stats.modelStats && Object.keys(stats.modelStats).length > 0) {
+    console.log(chalk.bold("\n  Unified Model Usage (All Account Types)\n"));
+    const sorted = Object.entries(stats.modelStats)
+      .sort((a, b) => b[1].totalRequests - a[1].totalRequests)
+      .slice(0, 6);
+    const peak = sorted[0]?.[1]?.totalRequests || 1;
+
+    for (const [model, modelStat] of sorted) {
+      const errorRate = (modelStat.errorRate * 100).toFixed(1);
+      const errorColor = parseFloat(errorRate) > 10 ? chalk.red : chalk.gray;
+
+      // Account type breakdown
+      const accountBreakdown = Object.entries(modelStat.accountTypes || {})
+        .map(([type, count]) => {
+          const label = type === "api_key" ? "API" : type === "oauth" ? "OAuth" : type;
+          return `${label}:${count}`;
+        })
+        .join(" ");
+
+      console.log(
+        `  ${chalk.gray(model.padEnd(30))} ${bar(modelStat.totalRequests, peak, 12)}  ${modelStat.totalRequests} req`,
+      );
+      console.log(
+        `  ${chalk.gray(" ".repeat(30))} ${chalk.dim(accountBreakdown)}  ${errorColor(errorRate + "% err")}`,
+      );
     }
   }
 

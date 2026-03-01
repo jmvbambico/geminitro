@@ -15,5 +15,9 @@ export default [
       "no-empty": ["error", { allowEmptyCatch: true }],
     },
   },
+  {
+    files: ["tests/**/*.js"],
+    languageOptions: { globals: { ...globals.node, ...globals.jest } },
+  },
   { ignores: ["public/**", "dashboard/**", "docs/**"] },
 ];

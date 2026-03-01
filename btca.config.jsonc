@@ -1,0 +1,41 @@
+{
+  "resources": [
+    {
+      "type": "npm",
+      "name": "google-generative-ai",
+      "package": "@google/generative-ai"
+    },
+    {
+      "type": "npm",
+      "name": "express",
+      "package": "express"
+    },
+    {
+      "type": "npm",
+      "name": "socket.io",
+      "package": "socket.io"
+    },
+    {
+      "type": "npm",
+      "name": "commander",
+      "package": "commander"
+    },
+    {
+      "type": "npm",
+      "name": "react",
+      "package": "react"
+    },
+    {
+      "type": "npm",
+      "name": "tailwind",
+      "package": "tailwind"
+    },
+    {
+      "type": "npm",
+      "name": "vite",
+      "package": "vite"
+    }
+  ],
+  "model": "claude-haiku-4.5",
+  "provider": "anthropic"
+}

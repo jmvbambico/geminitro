@@ -2,6 +2,7 @@ const express = require("express");
 const keyService = require("../services/keyService");
 const geminiService = require("../services/geminiService");
 const statsService = require("../services/statsService");
+const usageCapService = require("../services/usageCapService");
 const config = require("../config");
 const logger = require("../utils/logger");
 const oauthService = require("../services/oauthService");
@@ -250,6 +251,11 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
 
       keyService.incrementKeyUsage(currentKey);
       statsService.trackRequest(currentKey, targetModel, true);
+
+      // Increment usage cap counter (with account tracking)
+      const accountId = keyObj.type === "oauth" ? keyObj.email : currentKey.slice(-6);
+      usageCapService.incrementUsage(targetModel, accountId);
+
       io.emit("traffic_update");
       logger.proxyResponse(targetModel, "success", Date.now() - startTime);
 
@@ -646,6 +652,120 @@ module.exports = (io) => {
       logger.error("Manual OAuth token addition failed", e);
       res.status(500).json({ error: e.message });
     }
+  });
+
+  // Unified stats endpoint
+  router.get("/api/stats/unified", (req, res) => {
+    const { since, model } = req.query;
+    const options = {};
+
+    if (since) {
+      options.since = parseInt(since, 10);
+    }
+
+    const stats = statsService.getModelStats(options);
+
+    if (model) {
+      const cleanModel = model.replace("models/", "");
+      return res.json({ [cleanModel]: stats[cleanModel] || null });
+    }
+
+    res.json(stats);
+  });
+
+  // Usage cap endpoints
+  router.get("/api/stats/caps", (req, res) => {
+    res.json(usageCapService.getAllCaps());
+  });
+
+  router.post("/api/stats/caps", (req, res) => {
+    try {
+      usageCapService.addOrUpdateCap(req.body);
+      io.emit("usage:cap-updated", usageCapService.getAllCaps());
+      res.json({ success: true });
+    } catch (e) {
+      logger.error("Failed to add/update usage cap", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  router.delete("/api/stats/caps/:model", (req, res) => {
+    const removed = usageCapService.removeCap(req.params.model);
+    if (removed) {
+      io.emit("usage:cap-updated", usageCapService.getAllCaps());
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: "Cap not found" });
+    }
+  });
+
+  router.get("/api/stats/caps/check/:model", (req, res) => {
+    const progress = usageCapService.getCapProgress(req.params.model);
+    res.json(progress);
+  });
+
+  router.get("/api/stats/caps/progress", (req, res) => {
+    const allProgress = usageCapService.getAllProgress();
+    res.json(allProgress);
+  });
+
+  // Quota summary endpoint for TUI (combines caps + account breakdown + reset timing)
+  router.get("/api/stats/quota-summary", (req, res) => {
+    const capsProgress = usageCapService.getAllProgress();
+    const modelStats = statsService.getStats().modelStats || {};
+    const poolStatus = keyService.getPoolStatus();
+
+    const summary = capsProgress.map((cap) => {
+      const modelStat = modelStats[cap.model] || {};
+      const accountTypes = modelStat.accountTypes || {};
+      const accounts = modelStat.accounts || {};
+
+      // Count account types
+      const apiKeyCount = accountTypes.api_key || 0;
+      const oauthCount = accountTypes.oauth || 0;
+      const totalAccounts = Object.keys(accounts).length;
+
+      // Calculate reset time
+      const nextReset = cap.nextReset;
+      const now = new Date();
+      const resetDate = new Date(nextReset);
+      const resetInMs = resetDate.getTime() - now.getTime();
+      const resetInSeconds = Math.max(0, Math.floor(resetInMs / 1000));
+
+      // Format reset time as human-readable
+      const hours = Math.floor(resetInSeconds / 3600);
+      const minutes = Math.floor((resetInSeconds % 3600) / 60);
+      const resetInFormatted = `${hours}h ${minutes}m`;
+
+      return {
+        model: cap.model,
+        current: cap.current,
+        limit: cap.limit,
+        percentage: cap.percentage,
+        atWarning: cap.atWarning,
+        atCap: cap.atCap,
+        resetTime: nextReset,
+        resetIn: resetInSeconds,
+        resetInFormatted,
+        accounts: {
+          apiKeys: apiKeyCount,
+          oauth: oauthCount,
+          total: totalAccounts,
+        },
+      };
+    });
+
+    res.json({
+      quotas: summary,
+      poolStatus,
+    });
+  });
+
+  router.post("/api/stats/caps/config", (req, res) => {
+    const { resetTime, timezone } = req.body;
+    if (resetTime) usageCapService.setResetTime(resetTime);
+    if (timezone) usageCapService.setTimezone(timezone);
+    res.json({ success: true });
   });
 
   router.get("/api/config-template", async (req, res) => {

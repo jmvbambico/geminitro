@@ -1,5 +1,5 @@
 const fs = require("fs");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+// Removed: const { GoogleGenerativeAI } = require('@google/generative-ai');
 const keyService = require("./keyService");
 const oauthService = require("./oauthService");
 const antigravityService = require("./antigravityService");
@@ -183,6 +183,7 @@ const mapMessagesToGemini = (messages) => {
                 name: tc.function.name,
                 args,
                 id: tc.id, // Preserve ID for backends like Antigravity/Claude
+                thought_signature: "", // Required by Gemini API for function calls
               },
             });
           }
@@ -341,47 +342,149 @@ const generateContent = async (
     );
   }
 
-  const genAI = new GoogleGenerativeAI(apiKey);
+  // API key path - use raw fetch instead of SDK
+  return await generateContentWithApiKey(
+    apiKey,
+    modelName,
+    messages,
+    generationConfig,
+    stream,
+    tools,
+    toolConfig,
+  );
+};
+
+// New function: Raw fetch for API keys (no SDK)
+async function generateContentWithApiKey(
+  apiKey,
+  modelName,
+  messages,
+  generationConfig = {},
+  stream = false,
+  tools = null,
+  toolConfig = null,
+) {
   const { contents, systemInstruction } = mapMessagesToGemini(messages);
 
-  // Convert OpenAI-format tools → Gemini tools schema
-  const geminiTools =
-    Array.isArray(tools) && tools.length > 0
-      ? [
-          {
-            functionDeclarations: tools
-              .filter((t) => t.type === "function" && t.function)
-              .map((t) => ({
-                name: t.function.name,
-                description: t.function.description || "",
-                parameters: sanitizeToolParameters(t.function.parameters) || {
-                  type: "object",
-                  properties: {},
-                },
-              })),
-          },
-        ]
-      : undefined;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:${stream ? "streamGenerateContent" : "generateContent"}`;
 
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    systemInstruction,
-    safetySettings,
-    ...(geminiTools ? { tools: geminiTools } : {}),
-    ...(toolConfig ? { toolConfig } : {}),
-  });
+  const requestBody = {
+    contents,
+    generationConfig: generationConfig || {},
+  };
 
-  if (stream) {
-    return await model.generateContentStream({ contents, generationConfig });
+  if (systemInstruction) {
+    requestBody.systemInstruction = systemInstruction;
   }
-  return await model.generateContent({ contents, generationConfig });
-};
+
+  // Convert OpenAI-format tools → Gemini tools schema
+  if (Array.isArray(tools) && tools.length > 0) {
+    requestBody.tools = [
+      {
+        functionDeclarations: tools
+          .filter((t) => t.type === "function" && t.function)
+          .map((t) => ({
+            name: t.function.name,
+            description: t.function.description || "",
+            parameters: sanitizeToolParameters(t.function.parameters) || {
+              type: "object",
+              properties: {},
+            },
+          })),
+      },
+    ];
+  }
+
+  if (toolConfig) {
+    requestBody.toolConfig = toolConfig;
+  }
+
+  requestBody.safetySettings = safetySettings;
+  // Apply timeout based on streaming vs non-streaming
+  const timeout = stream ? config.TIMEOUT_READ_STREAMING : config.TIMEOUT_READ_NON_STREAMING;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout * 1000);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini API error ${response.status}: ${errorText}`);
+    }
+    if (stream) {
+      return {
+        stream: (async function* () {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+                  yield {
+                    text: () =>
+                      data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "",
+                    functionCalls:
+                      data.candidates?.[0]?.content?.parts
+                        ?.filter((p) => p.functionCall)
+                        ?.map((p) => p.functionCall) || [],
+                  };
+                } catch {
+                  // Skip malformed JSON
+                }
+              }
+            }
+          }
+        })(),
+      };
+    }
+
+    const data = await response.json();
+    return {
+      response: {
+        text: () => data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "",
+        functionCalls:
+          data.candidates?.[0]?.content?.parts
+            ?.filter((p) => p.functionCall)
+            ?.map((p) => p.functionCall) || [],
+        usageMetadata: data.usageMetadata || null,
+      },
+    };
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === "AbortError") {
+      throw new Error(`Gemini API request timeout after ${timeout}s`, { cause: error });
+    }
+    throw error;
+  }
+}
 
 module.exports = {
   fetchGoogleModels,
   getDynamicModels,
   initializeModelFetching,
   generateContent,
+  generateContentWithApiKey,
   mapMessagesToGemini,
   validateKey,
   loadCachedModels,

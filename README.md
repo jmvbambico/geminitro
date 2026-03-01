@@ -2,14 +2,14 @@
 
 # <img src="logo.webp" alt="GemiNitro" width="40" height="40" align="top"> GemiNitro
 
-**Lightweight Gemini API proxy with key pooling, automatic rotation, and a live web dashboard.**
+**Production-grade Gemini API proxy with intelligent key pooling, quota management, and enterprise resilience features.**
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Express](https://img.shields.io/badge/express-5-000000?logo=express&logoColor=white)](https://expressjs.com)
 [![Socket.IO](https://img.shields.io/badge/socket.io-4-010101?logo=socket.io&logoColor=white)](https://socket.io)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Pool multiple Gemini API keys, rotate on rate limits, recover automatically. Integrates with AI coding agents via one command.
+Pool multiple Gemini API keys with intelligent rotation strategies, automatic quota tracking, and comprehensive usage analytics. Built for reliability and scale.
 
 </div>
 
@@ -17,16 +17,22 @@ Pool multiple Gemini API keys, rotate on rate limits, recover automatically. Int
 
 ## What it does
 
-GemiNitro sits between your AI coding agent (or any OpenAI-compatible client) and Google's Gemini API. You give it a pool of free API keys from [Google AI Studio](https://aistudio.google.com); it picks the least-recently-used key for each request, backs off on 429s automatically, and recovers keys after their cooldown expires.
+GemiNitro is a production-grade reverse proxy for Google's Gemini API that sits between your AI coding agent (or any OpenAI-compatible client) and Google's Gemini API. It intelligently manages multiple API keys, tracks usage quotas, handles rate limits automatically, and provides comprehensive analytics.
 
-- **Key rotation** — least-recently-used selection across N keys
-- **Cooldown & retry** — on 429, marks key as cooling, tries the next one, recovers automatically
-- **OpenAI-compatible** — works with `/v1/chat/completions` and any OpenAI-compatible client
+### Core Features
+
+- **Intelligent key rotation** — weighted random, LRU, or sequential selection with configurable tolerance
+- **Priority tiers** — free/standard/premium/enterprise with concurrency multipliers
+- **Usage quota management** — per-model caps with per-account tracking and combined limits
+- **Automatic cooldown & retry** — on 429 errors, marks key as cooling, tries next available key
+- **Quota groups** — share limits across model variants (e.g., gemini-2.0-flash + gemini-2.5-flash)
+- **Duplicate detection** — prevents adding the same API key or OAuth account twice
+- **OpenAI-compatible** — works with `/v1/chat/completions` and any OpenAI SDK
 - **Native Gemini REST** — also proxies `/v1/models/{model}:generateContent` paths directly
-- **Model discovery** — fetches available models from Google's API on first key add, refreshes hourly
-- **Web dashboard** — live traffic, key pool, model usage, and system logs at `http://localhost:7536/dashboard`
-- **CLI** — `geminitro start`, `stats`, `install`, `key add/list/remove`
-- **Coding agent integration** — `geminitro install` writes the provider config for your agent interactively
+- **Model discovery** — fetches available models from Google's API, refreshes hourly
+- **Live web dashboard** — real-time traffic, quota meters, key pool status, and system logs
+- **Comprehensive CLI** — `start`, `stats`, `install`, `key add/list/remove`, and more
+- **Coding agent integration** — one-command setup for OpenCode, Continue.dev, Aider, and others
 
 ---
 
@@ -215,13 +221,14 @@ capabilities = ["thinking", "image_in"]
 
 A live dashboard is served at `http://localhost:7536/dashboard` when the server is running.
 
-- **Overview** — traffic stats, live traffic chart, 7-day request history, model usage pie chart
-- **API Keys** — inline key table with status badges, add/remove keys
-- **System Logs** — live log stream with type-colored rows
-- **Settings** — proxy API key management, server info
+- **Overview** — traffic stats, live traffic chart, usage quota meters, model distribution
+- **Usage Quotas** — per-model quota progress bars with warning thresholds and reset timers
+- **API Keys** — inline key table with status badges, priority tiers, add/remove keys
+- **System Logs** — live log stream with type-colored rows and collapsible interface
+- **Settings** — proxy API key management, quota reset schedule, server info
 - **Setup Wizard** — browser-based first-run key setup at `/dashboard/setup`
 - **Themes** — dark mode toggle + themeable OKLCH color palette
-- **Live updates** — Socket.IO pushes key pool changes, traffic ticks, and log entries in real time
+- **Live updates** — Socket.IO pushes key pool changes, traffic ticks, quota alerts, and log entries in real time
 
 Build the dashboard from source:
 
@@ -239,7 +246,7 @@ geminitro start --no-splash  Start without splash screen
 geminitro stop               Stop the running server
 geminitro restart            Restart the server
 geminitro status             Quick health check
-geminitro stats              Terminal stats: requests, keys, model usage, 7-day history
+geminitro stats              Terminal stats: quota usage (first), requests, keys, model usage, 7-day history
 geminitro install            Register with a coding agent (interactive)
 geminitro uninstall          Remove from all detected agent configs (auto-detected, one confirm)
 geminitro update             Check for and apply the latest release
@@ -262,6 +269,89 @@ geminitro key list           List all keys with status
 
 Set in `.env` or as environment variables. Copy `.env.example` to get started.
 
+### Advanced Configuration
+
+#### Rotation & Key Management
+
+| Variable                          | Default    | Description                                                                  |
+| --------------------------------- | ---------- | ---------------------------------------------------------------------------- |
+| `ROTATION_MODE`                   | `balanced` | Key selection strategy: `balanced` (LRU), `sequential` (exhaust then rotate) |
+| `ROTATION_TOLERANCE`              | `0`        | Randomness in weighted selection: `0` = deterministic, `1` = fully random    |
+| `MAX_CONCURRENT_REQUESTS_PER_KEY` | `3`        | Concurrent request limit per API key (prevents quota exhaustion)             |
+
+#### Timeout Configuration (milliseconds)
+
+| Variable                     | Default  | Description                                    |
+| ---------------------------- | -------- | ---------------------------------------------- |
+| `TIMEOUT_CONNECT`            | `10000`  | Connection timeout (10s)                       |
+| `TIMEOUT_WRITE`              | `30000`  | Write timeout (30s)                            |
+| `TIMEOUT_READ_STREAMING`     | `300000` | Read timeout for streaming requests (5min)     |
+| `TIMEOUT_READ_NON_STREAMING` | `60000`  | Read timeout for non-streaming requests (1min) |
+
+#### Priority Tiers
+
+Configure concurrency multipliers for different account tiers (applied to `MAX_CONCURRENT_REQUESTS_PER_KEY`):
+
+```bash
+# Format: tier:multiplier (comma-separated)
+PRIORITY_TIER_MULTIPLIERS=free:1.0,standard:1.5,premium:2.0,enterprise:3.0
+```
+
+**Example**: If `MAX_CONCURRENT_REQUESTS_PER_KEY=3` and tier is `premium` (2.0x), that key gets 6 concurrent requests.
+
+#### Quota Groups
+
+Share quota limits across model variants that use the same underlying model:
+
+```bash
+# Antigravity/Claude models (comma-separated variants)
+QUOTA_GROUPS_ANTIGRAVITY_CLAUDE=claude-sonnet-4-5,claude-opus-4-5,claude-sonnet-4-6
+
+# Gemini Pro variants
+QUOTA_GROUPS_GEMINI_PRO=gemini-2.0-flash,gemini-2.5-flash,gemini-2.0-flash-exp
+```
+
+When any model in a group hits its quota, all models in that group enter cooldown.
+
+### Usage Quota Management
+
+GemiNitro tracks usage per model with configurable daily limits. Quotas are managed via:
+
+1. **Dashboard UI** — visual quota meters, warning thresholds, cap management modal
+2. **CLI** — `geminitro stats` shows quota usage with colored progress bars
+3. **API** — programmatic quota management (see API Reference below)
+
+**Data files** (auto-created in `.geminitro/`):
+
+- `usage_caps.json` — quota configuration (limits, thresholds, reset schedule)
+- `history.json` — usage statistics with per-account breakdown
+
+**Features**:
+
+- Per-model daily limits with automatic reset at configurable time
+- Warning thresholds (default 80%) with Socket.IO notifications
+- Per-account tracking aggregated into combined model limits
+- Configurable actions: `try_next` (use another key) or `reject` (return 429)
+
+**Example quota configuration** (`.geminitro/usage_caps.json`):
+
+```json
+{
+  "caps": [
+    {
+      "model": "gemini-2.0-flash",
+      "limit": 1500,
+      "period": "daily",
+      "alertThreshold": 80,
+      "action": "try_next",
+      "enabled": true
+    }
+  ],
+  "resetTime": "00:00",
+  "timezone": "local"
+}
+```
+
 ### OAuth Setup (for Antigravity / Gemini CLI accounts)
 
 To use OAuth-based accounts (Antigravity or Gemini CLI), you need Google OAuth credentials. Add them to your `.env`:
@@ -282,18 +372,43 @@ OAUTH_CLIENT_SECRET=your-client-secret-here
 
 ## API Reference
 
-| Method   | Path                                       | Auth   | Description                              |
-| -------- | ------------------------------------------ | ------ | ---------------------------------------- |
-| `GET`    | `/api/health`                              | None   | Server health, key pool summary, version |
-| `POST`   | `/v1/chat/completions`                     | Bearer | OpenAI-compatible inference              |
-| `POST`   | `/v1/models/{model}:generateContent`       | Bearer | Native Gemini REST                       |
-| `POST`   | `/v1/models/{model}:streamGenerateContent` | Bearer | Native Gemini REST (streaming)           |
-| `GET`    | `/v1/models`                               | Bearer | List available models                    |
-| `GET`    | `/api/stats`                               | Bearer | Full usage statistics                    |
-| `GET`    | `/api/keys/safe`                           | Bearer | List key pool (tails only, no raw keys)  |
-| `POST`   | `/api/keys`                                | Bearer | Add and validate a key                   |
-| `DELETE` | `/api/keys/:fragment`                      | Bearer | Remove a key by last 6+ chars            |
-| `POST`   | `/api/refresh-models`                      | Bearer | Force model list refresh                 |
+### Core Endpoints
+
+| Method | Path                                       | Auth   | Description                              |
+| ------ | ------------------------------------------ | ------ | ---------------------------------------- |
+| `GET`  | `/api/health`                              | None   | Server health, key pool summary, version |
+| `POST` | `/v1/chat/completions`                     | Bearer | OpenAI-compatible inference              |
+| `POST` | `/v1/models/{model}:generateContent`       | Bearer | Native Gemini REST                       |
+| `POST` | `/v1/models/{model}:streamGenerateContent` | Bearer | Native Gemini REST (streaming)           |
+| `GET`  | `/v1/models`                               | Bearer | List available models                    |
+
+### Statistics & Monitoring
+
+| Method | Path                       | Auth   | Description                                                     |
+| ------ | -------------------------- | ------ | --------------------------------------------------------------- |
+| `GET`  | `/api/stats`               | Bearer | Full usage statistics (requests, success rate, daily breakdown) |
+| `GET`  | `/api/stats/unified`       | Bearer | Unified model statistics across all account types               |
+| `GET`  | `/api/stats/quota-summary` | Bearer | Combined quota usage with account breakdown and reset times     |
+
+### Key Management
+
+| Method   | Path                  | Auth   | Description                             |
+| -------- | --------------------- | ------ | --------------------------------------- |
+| `GET`    | `/api/keys/safe`      | Bearer | List key pool (tails only, no raw keys) |
+| `POST`   | `/api/keys`           | Bearer | Add and validate a key                  |
+| `DELETE` | `/api/keys/:fragment` | Bearer | Remove a key by last 6+ chars           |
+| `POST`   | `/api/refresh-models` | Bearer | Force model list refresh                |
+
+### Usage Quota Management
+
+| Method   | Path                           | Auth   | Description                                  |
+| -------- | ------------------------------ | ------ | -------------------------------------------- |
+| `GET`    | `/api/stats/caps`              | Bearer | Get all usage cap configurations             |
+| `POST`   | `/api/stats/caps`              | Bearer | Add or update a usage cap                    |
+| `DELETE` | `/api/stats/caps/:model`       | Bearer | Remove usage cap for a model                 |
+| `GET`    | `/api/stats/caps/progress`     | Bearer | Get usage progress for all capped models     |
+| `GET`    | `/api/stats/caps/check/:model` | Bearer | Check usage progress for specific model      |
+| `POST`   | `/api/stats/caps/config`       | Bearer | Update reset time and timezone configuration |
 
 All authenticated routes require `Authorization: Bearer <PROXY_API_KEY>` (default: `geminitro`).
 
@@ -321,12 +436,30 @@ The server starts on `:7536`. Dashboard source lives in `dashboard/` (Vite + Rea
 - **Dependabot** — weekly npm updates, monthly GitHub Actions updates
 - **Pre-commit hooks** — ESLint + Prettier + npm audit on every commit
 
+### Testing
+
+```bash
+npm test              # Run all tests (60 test suites)
+npm run test:watch    # Run tests in watch mode
+npm run test:coverage # Generate coverage report
+```
+
+**Test coverage**:
+
+- ✅ 60 tests passing across 11 test suites
+- Key service: rotation modes, priority tiers, duplicate detection, weighted selection
+- Usage cap service: per-account tracking, quota aggregation, reset scheduling
+- Stats service: unified statistics, model breakdowns
+- Quota service: quota group management, shared cooldowns
+- Semaphore: concurrency limiting per provider
+
 ---
 
 ## Credits
 
 - **[KeyStream-Gemini](https://github.com/billtruong003/KeyStream-Gemini)** by billtruong003 — the original Gemini key-pooling proxy that inspired GemiNitro's core architecture: LRU key rotation, automatic cooldown recovery, and the OpenAI-compatible interface.
 - **[opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth)** by NoeFabris — reverse-engineered the Antigravity OAuth flow and API spec that GemiNitro's OAuth service and Antigravity integration are built on.
+- **[LLM-API-Key-Proxy](https://github.com/Mirrowel/LLM-API-Key-Proxy)** by Mirrowel — inspired the resilience features: weighted rotation, priority tiers, quota groups, and usage tracking patterns.
 
 ---
 

@@ -9,6 +9,8 @@ let stats = {
   daily: {},
   models: {},
   keyUsage: {},
+  // New: Unified model statistics across all account types
+  modelStats: {}, // { modelName: { totalRequests, errors, accountTypes: {}, timestamps: [] } }
 };
 
 let saveTimer = null;
@@ -81,6 +83,156 @@ const trackRequest = (key, model, isSuccess) => {
   scheduleSave();
 };
 
+/**
+ * Record a request with model and account type for unified statistics.
+ * @param {string} model - Model name
+ * @param {string} accountType - Type of account (api_key, oauth)
+ * @param {string} accountId - Account identifier
+ * @param {number} timestamp - Request timestamp (optional, defaults to now)
+ */
+const recordRequest = (model, accountType, accountId, timestamp = Date.now()) => {
+  const cleanModel = model.replace("models/", "");
+
+  if (!stats.modelStats[cleanModel]) {
+    stats.modelStats[cleanModel] = {
+      totalRequests: 0,
+      errors: 0,
+      accountTypes: {},
+      timestamps: [],
+      accounts: {},
+    };
+  }
+
+  const modelStat = stats.modelStats[cleanModel];
+  modelStat.totalRequests++;
+  modelStat.timestamps.push(timestamp);
+
+  if (!modelStat.accountTypes[accountType]) {
+    modelStat.accountTypes[accountType] = 0;
+  }
+  modelStat.accountTypes[accountType]++;
+
+  if (!modelStat.accounts[accountId]) {
+    modelStat.accounts[accountId] = {
+      type: accountType,
+      requests: 0,
+      errors: 0,
+    };
+  }
+  modelStat.accounts[accountId].requests++;
+  scheduleSave();
+};
+
+/**
+ * Record an error for a model and account type.
+ * @param {string} model - Model name
+ * @param {string} accountType - Type of account
+ * @param {string} accountId - Account identifier
+ * @param {string} errorMessage - Error message
+ */
+const recordError = (model, accountType, accountId, _errorMessage) => {
+  const cleanModel = model.replace("models/", "");
+
+  if (!stats.modelStats[cleanModel]) {
+    recordRequest(model, accountType, accountId);
+  }
+
+  stats.modelStats[cleanModel].errors++;
+
+  if (stats.modelStats[cleanModel].accounts[accountId]) {
+    stats.modelStats[cleanModel].accounts[accountId].errors++;
+  }
+
+  scheduleSave();
+};
+
+/**
+ * Get unified statistics per model.
+ * @param {object} options - Query options { since: timestamp }
+ * @returns {object} Model statistics
+ */
+const getModelStats = (options = {}) => {
+  const result = {};
+
+  for (const [modelName, modelStat] of Object.entries(stats.modelStats)) {
+    let filteredStats = { ...modelStat };
+
+    // Filter by time range if requested
+    if (options.since) {
+      const filteredTimestamps = modelStat.timestamps.filter((t) => t >= options.since);
+      filteredStats.totalRequests = filteredTimestamps.length;
+      filteredStats.timestamps = filteredTimestamps;
+
+      // Recalculate account types based on filtered timestamps
+      // (simplified - assumes proportional distribution)
+      const ratio = filteredTimestamps.length / modelStat.timestamps.length;
+      filteredStats.accountTypes = {};
+      for (const [type, count] of Object.entries(modelStat.accountTypes)) {
+        filteredStats.accountTypes[type] = Math.round(count * ratio);
+      }
+    }
+
+    // Calculate error rate
+    filteredStats.errorRate =
+      filteredStats.totalRequests > 0 ? filteredStats.errors / filteredStats.totalRequests : 0;
+
+    result[modelName] = filteredStats;
+  }
+
+  return result;
+};
+
+/**
+ * Get unified statistics across all models and account types.
+ * @returns {object} { totalRequests, byModel: {}, byAccountType: {} }
+ */
+const getUnifiedStats = () => {
+  const result = {
+    totalRequests: 0,
+    byModel: {},
+    byAccountType: {},
+  };
+
+  for (const [modelName, modelStat] of Object.entries(stats.modelStats)) {
+    result.totalRequests += modelStat.totalRequests;
+    result.byModel[modelName] = modelStat.totalRequests;
+
+    // Aggregate by account type
+    for (const [accountType, count] of Object.entries(modelStat.accountTypes)) {
+      if (!result.byAccountType[accountType]) {
+        result.byAccountType[accountType] = 0;
+      }
+      result.byAccountType[accountType] += count;
+    }
+  }
+
+  return result;
+};
+
+/**
+ * Reset statistics (for testing).
+ */
+const resetStats = () => {
+  stats = {
+    totalRequests: 0,
+    totalSuccess: 0,
+    totalErrors: 0,
+    daily: {},
+    models: {},
+    keyUsage: {},
+    modelStats: {},
+  };
+};
+
 const getStats = () => ({ ...stats });
 
-module.exports = { initialize, trackRequest, getStats };
+module.exports = {
+  initialize,
+  trackRequest,
+  getStats,
+  recordRequest,
+  recordError,
+  getModelStats,
+  getUnifiedStats,
+  resetStats,
+};

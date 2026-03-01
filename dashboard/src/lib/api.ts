@@ -1,8 +1,16 @@
 const getApiKey = () => localStorage.getItem("geminitro_api_key") ?? "geminitro";
 
 export const api = {
-  get: (path: string) =>
-    fetch(path, { headers: { Authorization: `Bearer ${getApiKey()}` } }).then((r) => r.json()),
+  get: (path: string, options?: { params?: Record<string, string> }) => {
+    let url = path;
+    if (options?.params) {
+      const searchParams = new URLSearchParams(options.params);
+      url = `${path}?${searchParams.toString()}`;
+    }
+    return fetch(url, { headers: { Authorization: `Bearer ${getApiKey()}` } }).then((r) =>
+      r.json(),
+    );
+  },
 
   post: (path: string, body: unknown) =>
     fetch(path, {

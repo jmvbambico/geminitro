@@ -17,7 +17,7 @@
     "format:check": "prettier --check \"**/*.{js,json,md}\" \"!public/**\" \"!dashboard/dist/**\" && cd dashboard && prettier --check \"src/**/*.{ts,tsx,css}\"",
     "audit": "npm audit --audit-level=moderate",
     "prepare": "husky",
-    "test": "jest"
+    "test": "jest --forceExit"
   },
   "lint-staged": {
     "*.js": [
@@ -47,7 +47,6 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "@iarna/toml": "^2.2.5",
     "@inquirer/prompts": "^8.3.0",
     "chalk": "^4.1.2",

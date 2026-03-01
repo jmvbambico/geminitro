@@ -28,6 +28,39 @@ module.exports = {
   MODELS_FILE: path.join(DATA_DIR, "models.json"),
   GEMINI_API_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/models",
   KEY_COOLDOWN_TIME: 60000,
+
+  // Fine-grained timeout configuration (in seconds)
+  TIMEOUT_CONNECT: parseInt(process.env.TIMEOUT_CONNECT, 10) || 30,
+  TIMEOUT_WRITE: parseInt(process.env.TIMEOUT_WRITE, 10) || 30,
+  TIMEOUT_READ_STREAMING: parseInt(process.env.TIMEOUT_READ_STREAMING, 10) || 180,
+  TIMEOUT_READ_NON_STREAMING: parseInt(process.env.TIMEOUT_READ_NON_STREAMING, 10) || 600,
+
+  // Rotation mode: 'balanced' (LRU) or 'sequential' (exhaust one key first)
+  ROTATION_MODE: process.env.ROTATION_MODE || "balanced",
+
+  // Rotation tolerance: 0 = deterministic, 0.1 = 10% variance, 1 = fully random
+  ROTATION_TOLERANCE: parseFloat(process.env.ROTATION_TOLERANCE) || 0,
+
+  // Concurrency limits per key
+  MAX_CONCURRENT_REQUESTS_PER_KEY: parseInt(process.env.MAX_CONCURRENT_REQUESTS_PER_KEY, 10) || 3,
+
+  // Priority tier concurrency multipliers
+  PRIORITY_TIER_MULTIPLIERS: {
+    free: 0.5, // Free tier gets 50% of base concurrency
+    standard: 1.0, // Standard tier (default)
+    premium: 2.0, // Premium tier gets 2x concurrency
+    enterprise: 3.0, // Enterprise tier gets 3x concurrency
+  },
+
+  // Quota groups: models that share quota limits (cool down together)
+  QUOTA_GROUPS: {
+    "antigravity-claude": (
+      process.env.QUOTA_GROUPS_ANTIGRAVITY_CLAUDE || "claude-sonnet-4-5,claude-opus-4-5"
+    ).split(","),
+    "gemini-pro": (process.env.QUOTA_GROUPS_GEMINI_PRO || "gemini-2.0-pro,gemini-2.5-pro").split(
+      ",",
+    ),
+  },
   MODEL_FETCH_INTERVAL: 3600000,
   INITIAL_MODEL_FETCH_DELAY: 2000,
   PROXY_API_KEY: process.env.PROXY_API_KEY || "geminitro",

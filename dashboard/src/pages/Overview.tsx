@@ -1,3 +1,4 @@
+import { UnifiedStatsCard } from "@/components/stats/UnifiedStatsCard";
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useHealth } from "@/hooks/useHealth";
 import type { KeyEntry, LogEntry } from "@/hooks/useSocket";
@@ -15,7 +16,19 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { Trash2, Plus, Copy, Check } from "lucide-react";
+import {
+  Trash2,
+  Plus,
+  Copy,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Activity,
+  Calendar,
+  PieChart as PieChartIcon,
+  KeyRound,
+  FileText,
+} from "lucide-react";
 import { AddKeyModal, Modal } from "@/components/Layout";
 
 const CHART_VAR_COUNT = 8;
@@ -379,66 +392,81 @@ export function Overview({
         />
       </div>
 
-      {/* Row 2: Live Traffic Area Chart */}
-      <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
-        <h2 className="text-base font-semibold mb-6">Live Traffic</h2>
-        <div style={{ height: 220 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={trafficHistory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="colorReqs" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={sc["--primary"]} stopOpacity={0.4} />
-                  <stop offset="95%" stopColor={sc["--primary"]} stopOpacity={0.0} />
-                </linearGradient>
-              </defs>
-              <XAxis
-                dataKey="time"
-                tick={{ fill: sc["--muted-foreground"], fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-                minTickGap={30}
-              />
-              <YAxis
-                tick={{ fill: sc["--muted-foreground"], fontSize: 11 }}
-                tickLine={false}
-                axisLine={false}
-                allowDecimals={false}
-              />
-              <Tooltip
-                contentStyle={{
-                  borderRadius: "12px",
-                  border: `1px solid ${sc["--border"]}`,
-                  backgroundColor: sc["--card"],
-                  color: sc["--card-foreground"],
-                  boxShadow: "var(--shadow-md)",
-                }}
-                itemStyle={{ color: sc["--primary"], fontWeight: 600 }}
-                cursor={{
-                  stroke: sc["--muted-foreground"],
-                  strokeWidth: 1,
-                  strokeDasharray: "4 4",
-                  opacity: 0.4,
-                }}
-              />
-              <Area
-                type="monotone"
-                dataKey="reqs"
-                name="Requests"
-                stroke={sc["--primary"]}
-                strokeWidth={3}
-                fillOpacity={1}
-                fill="url(#colorReqs)"
-                animationDuration={500}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+      {/* Row 2: Live Traffic + Unified Stats */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Live Traffic Area Chart */}
+        <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-6">
+            <Activity size={18} className="text-muted-foreground" />
+            <h2 className="text-base font-semibold">Live Traffic</h2>
+          </div>
+          <div style={{ height: 220 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={trafficHistory}
+                margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient id="colorReqs" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={sc["--primary"]} stopOpacity={0.4} />
+                    <stop offset="95%" stopColor={sc["--primary"]} stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <XAxis
+                  dataKey="time"
+                  tick={{ fill: sc["--muted-foreground"], fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                  minTickGap={30}
+                />
+                <YAxis
+                  tick={{ fill: sc["--muted-foreground"], fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: "12px",
+                    border: `1px solid ${sc["--border"]}`,
+                    backgroundColor: sc["--card"],
+                    color: sc["--card-foreground"],
+                    boxShadow: "var(--shadow-md)",
+                  }}
+                  itemStyle={{ color: sc["--primary"], fontWeight: 600 }}
+                  cursor={{
+                    stroke: sc["--muted-foreground"],
+                    strokeWidth: 1,
+                    strokeDasharray: "4 4",
+                    opacity: 0.4,
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="reqs"
+                  name="Requests"
+                  stroke={sc["--primary"]}
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorReqs)"
+                  animationDuration={500}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
+
+        {/* Unified Model Usage Stats */}
+        <UnifiedStatsCard />
       </div>
 
       {/* Row 3: 7-Day Chart + Pie Chart */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
-          <h2 className="text-base font-semibold mb-6">7-Day Requests</h2>
+          <div className="flex items-center gap-2 mb-6">
+            <Calendar size={18} className="text-muted-foreground" />
+            <h2 className="text-base font-semibold">7-Day Requests</h2>
+          </div>
           {days.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
               No request history yet.
@@ -488,7 +516,10 @@ export function Overview({
         </div>
 
         <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
-          <h2 className="text-base font-semibold mb-6">Model Usage</h2>
+          <div className="flex items-center gap-2 mb-6">
+            <PieChartIcon size={18} className="text-muted-foreground" />
+            <h2 className="text-base font-semibold">Model Distribution</h2>
+          </div>
           <div className="flex flex-row items-center h-[250px]">
             <div className="flex-1 h-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -542,7 +573,10 @@ export function Overview({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="rounded-2xl border border-border/50 bg-card p-6 flex flex-col h-[450px] shadow-sm">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-base font-semibold">Accounts</h2>
+            <div className="flex items-center gap-2">
+              <KeyRound size={18} className="text-muted-foreground" />
+              <h2 className="text-base font-semibold">Accounts</h2>
+            </div>
             <button
               onClick={() => setAddKeyOpen(true)}
               className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-lg font-medium flex items-center gap-1.5 hover:opacity-90 transition-opacity shadow-sm"
@@ -612,7 +646,31 @@ export function Overview({
 
         <div className="rounded-2xl border border-border/50 bg-card p-6 flex flex-col h-[450px] shadow-sm">
           <div className="flex items-center justify-between mb-6 shrink-0">
-            <h2 className="text-base font-semibold">System Logs</h2>
+            <div className="flex items-center gap-2">
+              <FileText size={18} className="text-muted-foreground" />
+              <h2 className="text-base font-semibold">System Logs</h2>
+              {verboseLogging && (
+                <button
+                  onClick={() => {
+                    if (expandedLogs.size > 0) {
+                      setExpandedLogs(new Set());
+                    } else {
+                      const allVerboseLogIds = displayLogs
+                        .filter(
+                          (log) =>
+                            log.message.includes("Request:") || log.message.includes("Response:"),
+                        )
+                        .map((log) => log.id);
+                      setExpandedLogs(new Set(allVerboseLogIds));
+                    }
+                  }}
+                  className="p-1 rounded hover:bg-muted transition-colors"
+                  title={expandedLogs.size > 0 ? "Collapse All" : "Expand All"}
+                >
+                  {expandedLogs.size > 0 ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-4">
               <Switch
                 checked={showHealthChecks}
@@ -622,28 +680,7 @@ export function Overview({
               <Switch checked={verboseLogging} onChange={handleVerboseChange} label="Verbose" />
             </div>
           </div>
-          <div className="relative flex-1 min-h-0">
-            {verboseLogging && (
-              <button
-                onClick={() => {
-                  if (expandedLogs.size > 0) {
-                    setExpandedLogs(new Set());
-                  } else {
-                    const allVerboseLogIds = displayLogs
-                      .filter(
-                        (log) =>
-                          log.message.includes("Request:") || log.message.includes("Response:"),
-                      )
-                      .map((log) => log.id);
-                    setExpandedLogs(new Set(allVerboseLogIds));
-                  }
-                }}
-                className="absolute top-[-22px] right-2 z-10 w-7 h-6 flex items-center justify-center rounded-t-lg border-x border-t bg-[oklch(0.22_0.008_50)] border-[oklch(0.30_0.008_50)] text-white/50 hover:text-white hover:bg-[oklch(0.26_0.008_50)] transition-all text-sm font-bold shadow-sm"
-                title={expandedLogs.size > 0 ? "Collapse All" : "Expand All"}
-              >
-                {expandedLogs.size > 0 ? "−" : "+"}
-              </button>
-            )}
+          <div className="flex-1 min-h-0">
             <div
               ref={logsContainerRef}
               className="h-full overflow-auto rounded-lg p-3 font-mono text-[10px] shadow-inner"

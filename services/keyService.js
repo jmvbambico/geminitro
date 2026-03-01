@@ -5,13 +5,92 @@ const config = require("../config");
 const logger = require("../utils/logger");
 const antigravityService = require("./antigravityService");
 const statsService = require("./statsService");
-
+const usageCapService = require("./usageCapService");
+const Semaphore = require("./semaphore");
+const QuotaService = require("./quotaService");
 let keyPool = [];
+let currentRotationMode = config.ROTATION_MODE;
+let rotationTolerance = config.ROTATION_TOLERANCE || 0; // 0 = deterministic, 1 = fully random
+const quotaService = new QuotaService(config.QUOTA_GROUPS);
+
+/**
+ * Calculate concurrency limit for a priority tier.
+ * @param {string} tier - Priority tier (free, standard, premium, enterprise)
+ * @param {number} baseLimit - Base concurrency limit
+ * @returns {number} Adjusted concurrency limit
+ */
+const getConcurrencyLimit = (tier, baseLimit) => {
+  const multiplier = config.PRIORITY_TIER_MULTIPLIERS[tier] || 1.0;
+  return Math.floor(baseLimit * multiplier);
+};
 
 const ensureDataDir = () => {
   if (!fs.existsSync(config.DATA_DIR)) {
     fs.mkdirSync(config.DATA_DIR, { recursive: true });
   }
+};
+
+/**
+ * Normalize a credential string for comparison.
+ * @param {string} credential - API key or refresh token
+ * @returns {string} Normalized credential (trimmed)
+ */
+const normalizeCredential = (credential) => {
+  return credential.trim();
+};
+
+/**
+ * Generate a fingerprint for a credential to detect duplicates.
+ * For API keys: use the key itself
+ * For OAuth: use email+source (same account from same provider)
+ * @param {object} keyObj - Key object
+ * @returns {string} Fingerprint for duplicate detection
+ */
+const getCredentialFingerprint = (keyObj) => {
+  if (keyObj.type === "oauth") {
+    // OAuth: email + source uniquely identifies an account
+    return `oauth:${keyObj.source}:${keyObj.email}`;
+  }
+  // API keys: the key itself is the fingerprint
+  return `api_key:${normalizeCredential(keyObj.key)}`;
+};
+
+/**
+ * Detect duplicate credentials in the key pool.
+ * @returns {object} { duplicates: Array<{fingerprint, keys: Array}>, uniqueKeys: number }
+ */
+const detectDuplicates = () => {
+  const fingerprintMap = new Map();
+
+  // Group keys by fingerprint
+  for (const keyObj of keyPool) {
+    const fingerprint = getCredentialFingerprint(keyObj);
+    if (!fingerprintMap.has(fingerprint)) {
+      fingerprintMap.set(fingerprint, []);
+    }
+    fingerprintMap.get(fingerprint).push(keyObj);
+  }
+
+  // Find duplicates (fingerprints with multiple keys)
+  const duplicates = [];
+  for (const [fingerprint, keys] of fingerprintMap.entries()) {
+    if (keys.length > 1) {
+      duplicates.push({
+        fingerprint,
+        keys: keys.map((k) => ({
+          key: k.key.slice(-6), // Only show last 6 chars
+          type: k.type,
+          email: k.email,
+          source: k.source,
+        })),
+      });
+    }
+  }
+
+  return {
+    duplicates,
+    uniqueKeys: fingerprintMap.size,
+  };
 };
 
 const loadKeys = () => {
@@ -54,10 +133,16 @@ const loadKeys = () => {
           type: keyType,
           email: typeof k === "object" ? k.email : null,
           source: keySource,
+          priorityTier: "standard", // Default tier for loaded keys
           status: "active",
           usage: 0,
           errors: 0,
-          lastUsed: 0,
+          failureCount: 0,
+          failuresByModel: {},
+          concurrentRequests: 0,
+          semaphore: new Semaphore(
+            getConcurrencyLimit("standard", config.MAX_CONCURRENT_REQUESTS_PER_KEY),
+          ),
           supportedModels: migratedModels,
         }
       );
@@ -110,11 +195,88 @@ const saveKeys = () => {
   }
 };
 
+/**
+ * Set rotation mode for key selection.
+ * @param {string} mode - 'balanced' (LRU) or 'sequential' (exhaust quota)
+ */
+const setRotationMode = (mode) => {
+  if (!["balanced", "sequential"].includes(mode)) {
+    throw new Error(`Invalid rotation mode: ${mode}`);
+  }
+  currentRotationMode = mode;
+};
+
+/**
+ * Set rotation tolerance for weighted random selection.
+ * @param {number} tolerance - Value between 0 (deterministic) and 1 (fully random)
+ * - 0.0: Always pick optimal key (deterministic)
+ * - 0.1: 10% variance - pick from top ~10% of candidates
+ * - 1.0: Fully random selection from all keys
+ */
+const setRotationTolerance = (tolerance) => {
+  if (typeof tolerance !== "number" || isNaN(tolerance) || tolerance < 0 || tolerance > 1) {
+    throw new Error(`Invalid rotation tolerance: ${tolerance}. Must be between 0 and 1.`);
+  }
+  rotationTolerance = tolerance;
+};
+
+/**
+ * Select a key from an array with optional weighted randomness.
+ * @param {object[]} keys - Pre-filtered and sorted keys
+ * @returns {object} Selected key
+ * @private
+ */
+const _selectKeyWithTolerance = (keys) => {
+  if (keys.length === 0) return null;
+  if (keys.length === 1) return keys[0];
+
+  // If tolerance is 0, return the first (optimal) key
+  if (rotationTolerance === 0) {
+    return keys[0];
+  }
+
+  // Sort keys by current rotation mode
+  keys.sort(compareKeysByRotationMode);
+
+  // Calculate the range of acceptable keys based on tolerance
+  // tolerance = 0.1 means pick from top 10% of keys
+  const rangeSize = Math.max(1, Math.ceil(keys.length * rotationTolerance));
+  const candidates = keys.slice(0, rangeSize);
+
+  // Random selection from candidates
+  const randomIndex = Math.floor(Math.random() * candidates.length);
+  return candidates[randomIndex];
+};
+
+/**
+ * Compare two keys based on current rotation mode.
+ * @param {object} a - First key
+ * @param {object} b - Second key
+ * @returns {number} Comparison result (-1, 0, 1)
+ */
+const compareKeysByRotationMode = (a, b) => {
+  if (currentRotationMode === "balanced") {
+    // Balanced: prefer least-used (LRU)
+    return a.usage - b.usage;
+  } else {
+    // Sequential: prefer most-used (exhaust quota)
+    return b.usage - a.usage;
+  }
+};
+
 const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) => {
-  let bestKey = null;
-  let minUsage = Infinity;
+  // Check if model is at usage cap
+  if (desiredModel && usageCapService.isAtCap(desiredModel)) {
+    logger.warn(`Model ${desiredModel} at usage cap - trying next key`);
+    return null;
+  }
 
   const byType = (k) => (keyType ? k.type === keyType : true);
+
+  // Helper to select best key from filtered array
+  const selectBest = (keys) => {
+    return _selectKeyWithTolerance(keys);
+  };
 
   // 1. First Pass: Try to find an active key that EXPLICITLY supports the requested model
   const explicitMatch = keyPool.filter(
@@ -122,18 +284,13 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
       k.status === "active" &&
       !excludeKeys.includes(k.key) &&
       byType(k) &&
+      k.concurrentRequests < config.MAX_CONCURRENT_REQUESTS_PER_KEY &&
       desiredModel &&
       Array.isArray(k.supportedModels) &&
       k.supportedModels.includes(desiredModel),
   );
-
-  for (const k of explicitMatch) {
-    if (k.usage < minUsage) {
-      minUsage = k.usage;
-      bestKey = k;
-    }
-  }
-  if (bestKey) return bestKey;
+  const bestExplicit = selectBest(explicitMatch);
+  if (bestExplicit) return bestExplicit;
 
   // 2. Second Pass: Try to find an active key with UNKNOWN support (supportedModels is empty)
   // This is typical for standard API keys or newly added keys before discovery.
@@ -144,29 +301,23 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
       k.status === "active" &&
       !excludeKeys.includes(k.key) &&
       byType(k) &&
+      k.concurrentRequests < config.MAX_CONCURRENT_REQUESTS_PER_KEY &&
       (!Array.isArray(k.supportedModels) || k.supportedModels.length === 0),
   );
-
-  for (const k of unknownMatch) {
-    if (k.usage < minUsage) {
-      minUsage = k.usage;
-      bestKey = k;
-    }
-  }
-  if (bestKey) return bestKey;
+  const bestUnknown = selectBest(unknownMatch);
+  if (bestUnknown) return bestUnknown;
 
   // 3. Special Case: If NO desiredModel was specified, we can return any active key of the right type
   if (!desiredModel) {
     const anyActive = keyPool.filter(
-      (k) => k.status === "active" && !excludeKeys.includes(k.key) && byType(k),
+      (k) =>
+        k.status === "active" &&
+        !excludeKeys.includes(k.key) &&
+        byType(k) &&
+        k.concurrentRequests < config.MAX_CONCURRENT_REQUESTS_PER_KEY,
     );
-    for (const k of anyActive) {
-      if (k.usage < minUsage) {
-        minUsage = k.usage;
-        bestKey = k;
-      }
-    }
-    if (bestKey) return bestKey;
+    const bestAny = selectBest(anyActive);
+    if (bestAny) return bestAny;
   }
 
   // 4. Cooldown Recovery: If no active keys, try to recover a cooldown key
@@ -187,17 +338,57 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
   return null;
 };
 
+/**
+ * Acquire a concurrency slot for a key. Waits if limit is reached.
+ * @param {object} keyObj - Key object from keyPool
+ * @returns {Promise<void>}
+ */
+const acquireKey = async (keyObj) => {
+  if (!keyObj || !keyObj.semaphore) {
+    throw new Error("Invalid key object or missing semaphore");
+  }
+  await keyObj.semaphore.acquire();
+  keyObj.concurrentRequests++;
+};
+
+/**
+ * Release a concurrency slot for a key.
+ * @param {object} keyObj - Key object from keyPool
+ */
+const releaseKey = (keyObj) => {
+  if (!keyObj || !keyObj.semaphore) {
+    throw new Error("Invalid key object or missing semaphore");
+  }
+  keyObj.semaphore.release();
+  keyObj.concurrentRequests--;
+};
+
 const addKey = (key, options = {}) => {
-  const { type = "api_key", email = null, models = [], source = null } = options;
+  const {
+    type = "api_key",
+    email = null,
+    models = [],
+    source = null,
+    priorityTier = "standard",
+  } = options;
   if (key && !keyPool.find((k) => k.key === key)) {
+    const concurrencyLimit = getConcurrencyLimit(
+      priorityTier,
+      config.MAX_CONCURRENT_REQUESTS_PER_KEY,
+    );
     keyPool.push({
       key,
       type,
       email,
       source,
+      priorityTier,
       status: "active",
       usage: 0,
       errors: 0,
+      failureCount: 0,
+      failuresByModel: {},
+      concurrentRequests: 0,
+      semaphore: new Semaphore(concurrencyLimit),
       lastUsed: 0,
       supportedModels: Array.isArray(models) ? models : [],
     });
@@ -259,9 +450,16 @@ const addOAuthToken = async (refreshToken, provider, email = null) => {
       type: "oauth",
       email,
       source: provider,
+      priorityTier: "standard",
       status: "active",
       usage: 0,
       errors: 0,
+      failureCount: 0,
+      failuresByModel: {},
+      concurrentRequests: 0,
+      semaphore: new Semaphore(
+        getConcurrencyLimit("standard", config.MAX_CONCURRENT_REQUESTS_PER_KEY),
+      ),
       lastUsed: 0,
       supportedModels,
     });
@@ -279,11 +477,68 @@ const removeKey = (keyFragment) => {
   return true;
 };
 
-const updateKeyStatus = (key, status) => {
+/**
+ * Get cooldown duration based on consecutive failure count.
+ * Escalating pattern: 10s → 30s → 60s → 120s
+ * @param {number} failureCount - Number of consecutive failures
+ * @returns {number} Cooldown duration in seconds
+ */
+const getCooldownDuration = (failureCount) => {
+  const durations = [10, 30, 60, 120];
+  const index = Math.min(Math.max(failureCount - 1, 0), durations.length - 1);
+  return durations[index];
+};
+
+/**
+ * Update key status and apply escalating cooldowns on failures.
+ * @param {string} key - API key
+ * @param {string} status - New status ('active', 'cooldown', 'invalid')
+ * @param {string|null} model - Model that triggered the status change (optional)
+ */
+const updateKeyStatus = (key, status, model = null) => {
   const keyObj = keyPool.find((k) => k.key === key);
-  if (keyObj) {
+  if (!keyObj) return;
+
+  if (status === "cooldown") {
+    // Check if model is in a quota group (models sharing quota should cool down together)
+    const modelsToBlock = model ? quotaService.handleQuotaError(keyObj.key, model) : [model];
+
+    // Increment failure count for all models in the quota group
+    for (const modelToBlock of modelsToBlock) {
+      if (modelToBlock) {
+        keyObj.failuresByModel[modelToBlock] = (keyObj.failuresByModel[modelToBlock] || 0) + 1;
+      }
+    }
+
+    // Global failure count is the max across all models
+    const failureCounts = Object.values(keyObj.failuresByModel);
+    keyObj.failureCount = failureCounts.length > 0 ? Math.max(...failureCounts) : 1;
+
+    const cooldownSeconds = getCooldownDuration(keyObj.failureCount);
+    keyObj.status = "cooldown";
+    keyObj.cooldownUntil = Date.now() + cooldownSeconds * 1000;
+    keyObj.lastUsed = Date.now();
+
+    const modelsStr = modelsToBlock.length > 1 ? modelsToBlock.join(", ") : model || "all";
+    logger.info(
+      `Key cooldown: ${keyObj.failureCount} failures → ${cooldownSeconds}s timeout (models: ${modelsStr})`,
+    );
+  } else if (status === "active") {
+    // Reset failure count on success
+    if (model && keyObj.failuresByModel[model]) {
+      delete keyObj.failuresByModel[model];
+      const modelFailureCounts = Object.values(keyObj.failuresByModel);
+      keyObj.failureCount = modelFailureCounts.length > 0 ? Math.max(...modelFailureCounts) : 0;
+    } else {
+      keyObj.failureCount = 0;
+      keyObj.failuresByModel = {};
+    }
+    keyObj.status = "active";
+    keyObj.lastUsed = Date.now();
+  } else {
+    // Other statuses (invalid, etc.)
     keyObj.status = status;
-    if (status === "active" || status === "cooldown") keyObj.lastUsed = Date.now();
+    keyObj.lastUsed = Date.now();
   }
 };
 
@@ -435,9 +690,16 @@ const importAntigravityAccounts = async () => {
 
     keyPool.push({
       ...account,
+      priorityTier: "standard",
       status: "active",
       usage: 0,
       errors: 0,
+      failureCount: 0,
+      failuresByModel: {},
+      concurrentRequests: 0,
+      semaphore: new Semaphore(
+        getConcurrencyLimit("standard", config.MAX_CONCURRENT_REQUESTS_PER_KEY),
+      ),
       lastUsed: 0,
       supportedModels,
     });
@@ -527,9 +789,16 @@ const importGeminiCliAccounts = async () => {
 
     keyPool.push({
       ...account,
+      priorityTier: "standard",
       status: "active",
       usage: 0,
       errors: 0,
+      failureCount: 0,
+      failuresByModel: {},
+      concurrentRequests: 0,
+      semaphore: new Semaphore(
+        getConcurrencyLimit("standard", config.MAX_CONCURRENT_REQUESTS_PER_KEY),
+      ),
       lastUsed: 0,
       supportedModels,
     });
@@ -573,6 +842,17 @@ module.exports = {
   getSafeKeyPool,
   getCooldownRemaining,
   getPoolStatus,
+  getCooldownDuration,
+  setRotationMode,
+  setRotationTolerance,
+  _selectKeyWithTolerance,
+  getConcurrencyLimit,
+  normalizeCredential,
+  getCredentialFingerprint,
+  detectDuplicates,
+  acquireKey,
+  releaseKey,
+  quotaService,
   detectAntigravityAccounts,
   importAntigravityAccounts,
   getAntigravityAccounts,

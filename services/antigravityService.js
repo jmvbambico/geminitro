@@ -361,6 +361,7 @@ async function generateContentAntigravity(
                 name: tc.function.name,
                 args,
                 id: tc.id,
+                thought_signature: "", // Required by Gemini API for function calls
               },
             });
           }
