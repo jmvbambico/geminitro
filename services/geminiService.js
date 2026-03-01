@@ -183,6 +183,7 @@ const mapMessagesToGemini = (messages) => {
                 name: tc.function.name,
                 args,
                 id: tc.id, // Preserve ID for backends like Antigravity/Claude
+                thought_signature: "", // Required by Gemini API for function calls
               },
             });
           }
