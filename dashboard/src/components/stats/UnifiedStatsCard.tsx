@@ -39,11 +39,15 @@ export function UnifiedStatsCard() {
 
   if (loading || !stats) {
     return (
-      <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold">📊 Model Usage</h2>
+      <div>
+        <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-base font-semibold">📊 Model Usage</h2>
+          </div>
+          <div style={{ height: 220 }} className="flex items-center justify-center">
+            <p className="text-sm text-muted-foreground">Loading stats...</p>
+          </div>
         </div>
-        <p className="text-sm text-muted-foreground">Loading stats...</p>
       </div>
     );
   }
@@ -64,10 +68,10 @@ export function UnifiedStatsCard() {
   const maxRequests = topModels[0]?.[1]?.totalRequests || 1;
 
   return (
-    <div style={{ height: 220 }}>
-      <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm h-full overflow-hidden flex flex-col">
+    <div>
+      <div className="rounded-2xl border border-border/50 bg-card p-6 shadow-sm">
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <BarChart3 size={18} className="text-muted-foreground" />
             <h2 className="text-base font-semibold">Model Usage (All Accounts)</h2>
@@ -89,52 +93,54 @@ export function UnifiedStatsCard() {
           </button>
         </div>
 
-        {/* Collapsed View - fills available space */}
+        {/* Collapsed View */}
         {!expanded && (
-          <div className="space-y-3 overflow-y-auto flex-1">
-            {topModels.map(([modelName, modelStat]) => {
-              const capProgress = getProgress(modelName);
-              const barWidth = (modelStat.totalRequests / maxRequests) * 100;
+          <div style={{ height: 220 }} className="overflow-y-auto">
+            <div className="space-y-3">
+              {topModels.map(([modelName, modelStat]) => {
+                const capProgress = getProgress(modelName);
+                const barWidth = (modelStat.totalRequests / maxRequests) * 100;
 
-              return (
-                <div key={modelName} className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground font-medium truncate flex-1">
-                      {modelName}
-                    </span>
-                    <span className="text-muted-foreground ml-2">
-                      {modelStat.totalRequests} req
-                    </span>
-                  </div>
-
-                  {/* Usage quota meter */}
-                  {capProgress ? (
-                    <UsageProgressBar
-                      current={capProgress.current}
-                      limit={capProgress.limit}
-                      alertThreshold={capProgress.alertThreshold}
-                    />
-                  ) : (
-                    <div className="h-2 rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-primary transition-all"
-                        style={{ width: `${barWidth}%` }}
-                      />
+                return (
+                  <div key={modelName} className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground font-medium truncate flex-1">
+                        {modelName}
+                      </span>
+                      <span className="text-muted-foreground ml-2">
+                        {modelStat.totalRequests} req
+                      </span>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-            <div className="pt-2 border-t border-border/50 text-sm text-muted-foreground">
-              Total: {totalRequests.toLocaleString()} requests • {modelEntries.length} models •{" "}
-              {(avgErrorRate * 100).toFixed(1)}% avg errors
+
+                    {/* Usage quota meter */}
+                    {capProgress ? (
+                      <UsageProgressBar
+                        current={capProgress.current}
+                        limit={capProgress.limit}
+                        alertThreshold={capProgress.alertThreshold}
+                      />
+                    ) : (
+                      <div className="h-2 rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all"
+                          style={{ width: `${barWidth}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <div className="pt-2 border-t border-border/50 text-sm text-muted-foreground">
+                Total: {totalRequests.toLocaleString()} requests • {modelEntries.length} models •{" "}
+                {(avgErrorRate * 100).toFixed(1)}% avg errors
+              </div>
             </div>
           </div>
         )}
 
-        {/* Expanded View - fills available space */}
+        {/* Expanded View */}
         {expanded && (
-          <div className="space-y-4 flex-1 flex flex-col overflow-hidden">
+          <div style={{ height: 220 }} className="space-y-4 flex flex-col overflow-hidden">
             {/* Filters */}
             <div className="flex gap-3">
               <select
@@ -158,7 +164,7 @@ export function UnifiedStatsCard() {
             </div>
 
             {/* Model List */}
-            <div className="space-y-4 max-h-96 overflow-y-auto">
+            <div className="space-y-4 flex-1 overflow-y-auto">
               {modelEntries.map(([modelName, modelStat]) => {
                 const capProgress = getProgress(modelName);
                 const apiRequests = modelStat.accountTypes.api_key || 0;
