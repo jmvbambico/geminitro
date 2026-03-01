@@ -252,8 +252,9 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
       keyService.incrementKeyUsage(currentKey);
       statsService.trackRequest(currentKey, targetModel, true);
 
-      // Increment usage cap counter
-      usageCapService.incrementUsage(targetModel);
+      // Increment usage cap counter (with account tracking)
+      const accountId = keyObj.type === "oauth" ? keyObj.email : currentKey.slice(-6);
+      usageCapService.incrementUsage(targetModel, accountId);
 
       io.emit("traffic_update");
       logger.proxyResponse(targetModel, "success", Date.now() - startTime);

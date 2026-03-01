@@ -11,7 +11,7 @@ let capsConfig = {
   timezone: "local",
 };
 
-let currentUsage = {}; // { modelName: { count: number, lastReset: timestamp } }
+let currentUsage = {}; // { modelName: { accountId: { count: number, lastReset: timestamp } } }
 let resetTimerId = null;
 
 /**
@@ -130,28 +130,36 @@ const removeCap = (model) => {
 };
 
 /**
- * Increment usage count for a model.
+ * Increment usage count for a model and account.
  * @param {string} model - Model name
+ * @param {string} accountId - Account identifier (key tail or email)
  */
-const incrementUsage = (model) => {
+const incrementUsage = (model, accountId) => {
   const cleanModel = model.replace("models/", "");
 
   if (!currentUsage[cleanModel]) {
-    currentUsage[cleanModel] = {
+    currentUsage[cleanModel] = {};
+  }
+
+  if (!currentUsage[cleanModel][accountId]) {
+    currentUsage[cleanModel][accountId] = {
       count: 0,
       lastReset: new Date().toISOString(),
     };
   }
+  currentUsage[cleanModel][accountId].count++;
+  // Calculate combined usage across all accounts for this model
+  const combinedUsage = Object.values(currentUsage[cleanModel]).reduce(
+    (sum, acc) => sum + acc.count,
+    0,
+  );
+  const previousCombinedUsage = combinedUsage - 1; // Subtract the increment we just added
 
-  const previousCount = currentUsage[cleanModel].count;
-  currentUsage[cleanModel].count++;
-  const newCount = currentUsage[cleanModel].count;
-
-  // Check if we crossed alert threshold or cap limit
+  // Check if we crossed alert threshold or cap limit (combined)
   const cap = getCap(cleanModel);
   if (cap) {
-    const previousPercentage = (previousCount / cap.limit) * 100;
-    const newPercentage = (newCount / cap.limit) * 100;
+    const previousPercentage = (previousCombinedUsage / cap.limit) * 100;
+    const newPercentage = (combinedUsage / cap.limit) * 100;
 
     // Emit warning when crossing alert threshold
     if (previousPercentage < cap.alertThreshold && newPercentage >= cap.alertThreshold) {
@@ -159,7 +167,7 @@ const incrementUsage = (model) => {
       if (io) {
         io.emit("usage:cap-warning", {
           model: cleanModel,
-          current: newCount,
+          current: combinedUsage,
           limit: cap.limit,
           percentage: newPercentage,
           threshold: cap.alertThreshold,
@@ -168,12 +176,12 @@ const incrementUsage = (model) => {
     }
 
     // Emit cap exceeded when hitting limit
-    if (previousCount < cap.limit && newCount >= cap.limit) {
+    if (previousCombinedUsage < cap.limit && combinedUsage >= cap.limit) {
       const io = require("../utils/logger").getIo();
       if (io) {
         io.emit("usage:cap-exceeded", {
           model: cleanModel,
-          current: newCount,
+          current: combinedUsage,
           limit: cap.limit,
         });
       }
@@ -192,10 +200,13 @@ const isAtCap = (model) => {
 
   if (!cap) return false;
 
-  const usage = currentUsage[cleanModel];
-  if (!usage) return false;
+  const modelUsage = currentUsage[cleanModel];
+  if (!modelUsage) return false;
 
-  return usage.count >= cap.limit;
+  // Calculate combined usage across all accounts
+  const combinedUsage = Object.values(modelUsage).reduce((sum, acc) => sum + acc.count, 0);
+
+  return combinedUsage >= cap.limit;
 };
 
 /**
@@ -209,8 +220,20 @@ const getCapProgress = (model) => {
 
   if (!cap) return null;
 
-  const usage = currentUsage[cleanModel];
-  const current = usage ? usage.count : 0;
+  const modelUsage = currentUsage[cleanModel];
+
+  // Calculate combined usage across all accounts
+  const current = modelUsage
+    ? Object.values(modelUsage).reduce((sum, acc) => sum + acc.count, 0)
+    : 0;
+
+  // Get last reset time (use the most recent reset across all accounts)
+  const lastReset = modelUsage
+    ? Object.values(modelUsage).reduce((latest, acc) => {
+        return !latest || new Date(acc.lastReset) > new Date(latest) ? acc.lastReset : latest;
+      }, null)
+    : null;
+
   const percentage = (current / cap.limit) * 100;
 
   return {
@@ -222,7 +245,7 @@ const getCapProgress = (model) => {
     atWarning: percentage >= cap.alertThreshold,
     atCap: current >= cap.limit,
     nextReset: getNextResetTime(),
-    lastReset: usage ? usage.lastReset : null,
+    lastReset,
   };
 };
 
@@ -243,10 +266,13 @@ const getAllProgress = () => {
 const resetAllUsage = () => {
   const now = new Date().toISOString();
   Object.keys(currentUsage).forEach((model) => {
-    currentUsage[model] = {
-      count: 0,
-      lastReset: now,
-    };
+    // Reset all accounts for this model
+    Object.keys(currentUsage[model]).forEach((accountId) => {
+      currentUsage[model][accountId] = {
+        count: 0,
+        lastReset: now,
+      };
+    });
   });
 
   // Update lastReset timestamp in caps
