@@ -18,17 +18,17 @@ const run = async () => {
   const base = `http://localhost:${PORT}`;
   const headers = { Authorization: `Bearer ${PROXY_API_KEY}` };
 
-  let health, stats, capsProgress;
+  let health, stats, quotaSummary;
   try {
-    const [hr, sr, cr] = await Promise.all([
+    const [hr, sr, qr] = await Promise.all([
       fetch(`${base}/api/health`),
       fetch(`${base}/api/stats`, { headers }),
-      fetch(`${base}/api/stats/caps/progress`, { headers }),
+      fetch(`${base}/api/stats/quota-summary`, { headers }),
     ]);
     if (!hr.ok) throw new Error("no response");
     health = await hr.json();
     stats = await sr.json();
-    capsProgress = cr.ok ? await cr.json() : [];
+    quotaSummary = qr.ok ? await qr.json() : null;
   } catch {
     console.error(chalk.red(`\n  ✗ Cannot reach GemiNitro on :${PORT} — is it running?\n`));
     console.error(chalk.gray("  Start with: geminitro start\n"));
@@ -39,13 +39,48 @@ const run = async () => {
   const successRate = total > 0 ? ((stats.totalSuccess / total) * 100).toFixed(1) : "0.0";
   const rateColor = parseFloat(successRate) >= 90 ? chalk.green : chalk.yellow;
 
+  // Display quota summary FIRST (before Live Stats header)
+  if (quotaSummary && quotaSummary.quotas && quotaSummary.quotas.length > 0) {
+    console.log(chalk.bold("\n  Usage Quotas\n"));
+    console.log(chalk.gray("  " + "─".repeat(56)));
+
+    for (const quota of quotaSummary.quotas) {
+      // Calculate percentage for color
+      const percentage = quota.percentage || 0;
+      const barColor = quota.atCap ? chalk.red : quota.atWarning ? chalk.yellow : chalk.green;
+
+      // Model name
+      console.log(`\n  ${chalk.white(quota.model)}`);
+
+      // Combined usage with meter
+      const usageLine = `Combined: ${quota.current}/${quota.limit} requests`;
+      const barWidth = 12;
+      const filled = quota.limit > 0 ? Math.round((quota.current / quota.limit) * barWidth) : 0;
+      const meter = barColor("█".repeat(filled)) + chalk.gray("░".repeat(barWidth - filled));
+      const percentText = percentage.toFixed(2) + "%";
+      console.log(`    ${chalk.gray(usageLine.padEnd(40))} ${meter}  ${percentText}`);
+
+      // Reset time
+      const resetLine = `Resets in: ${quota.resetInFormatted}`;
+      console.log(`    ${chalk.gray(resetLine)}`);
+
+      // Account breakdown
+      const accountParts = [];
+      if (quota.accounts.apiKeys > 0) accountParts.push(`${quota.accounts.apiKeys} API keys`);
+      if (quota.accounts.oauth > 0) accountParts.push(`${quota.accounts.oauth} OAuth`);
+      const accountLine = `Accounts: ${accountParts.join(", ")} (${quota.accounts.total} total)`;
+      console.log(`    ${chalk.gray(accountLine)}`);
+    }
+
+    console.log("");
+  }
+
   console.log(chalk.bold("\n  GemiNitro — Live Stats\n"));
-  console.log(chalk.gray("  " + "─".repeat(56)));
+  console.log(chalk.gray("  " + "-".repeat(56)));
   console.log(
     `  ${chalk.cyan("Version")}    v${health.version}    ${chalk.cyan("Uptime")}  ${fmtUptime(health.uptime)}    ${chalk.cyan("Port")}  ${PORT}`,
   );
-  console.log(chalk.gray("  " + "─".repeat(56)));
-
+  console.log(chalk.gray("  " + "-".repeat(56)));
   console.log(chalk.bold("\n  Requests\n"));
   console.log(`  ${chalk.white("Total".padEnd(14))} ${total}`);
   console.log(
@@ -64,23 +99,6 @@ const run = async () => {
     `  ${(cdCount > 0 ? chalk.yellow : chalk.gray)("Cooldown".padEnd(14))} ${cdCount > 0 ? chalk.yellow(cdCount) : chalk.gray(cdCount)}`,
   );
   console.log(`  ${"Models".padEnd(14)} ${health.models}`);
-
-  // Usage Caps
-  if (capsProgress && capsProgress.length > 0) {
-    console.log(chalk.bold("\n  Usage Caps\n"));
-    for (const cap of capsProgress) {
-      const barColor = cap.atCap ? chalk.red : cap.atWarning ? chalk.yellow : chalk.green;
-      const statusText = cap.atCap
-        ? chalk.red("CAP REACHED")
-        : cap.atWarning
-          ? chalk.yellow("WARNING")
-          : chalk.gray("OK");
-
-      console.log(
-        `  ${chalk.gray(cap.model.padEnd(30))} ${barColor(bar(cap.current, cap.limit, 12))}  ${cap.current}/${cap.limit}  ${statusText}`,
-      );
-    }
-  }
 
   // Legacy model usage (old tracking)
   if (stats.models && Object.keys(stats.models).length > 0) {

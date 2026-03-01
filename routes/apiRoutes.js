@@ -708,6 +708,58 @@ module.exports = (io) => {
     res.json(allProgress);
   });
 
+  // Quota summary endpoint for TUI (combines caps + account breakdown + reset timing)
+  router.get("/api/stats/quota-summary", (req, res) => {
+    const capsProgress = usageCapService.getAllProgress();
+    const modelStats = statsService.getStats().modelStats || {};
+    const poolStatus = keyService.getPoolStatus();
+
+    const summary = capsProgress.map((cap) => {
+      const modelStat = modelStats[cap.model] || {};
+      const accountTypes = modelStat.accountTypes || {};
+      const accounts = modelStat.accounts || {};
+
+      // Count account types
+      const apiKeyCount = accountTypes.api_key || 0;
+      const oauthCount = accountTypes.oauth || 0;
+      const totalAccounts = Object.keys(accounts).length;
+
+      // Calculate reset time
+      const nextReset = cap.nextReset;
+      const now = new Date();
+      const resetDate = new Date(nextReset);
+      const resetInMs = resetDate.getTime() - now.getTime();
+      const resetInSeconds = Math.max(0, Math.floor(resetInMs / 1000));
+
+      // Format reset time as human-readable
+      const hours = Math.floor(resetInSeconds / 3600);
+      const minutes = Math.floor((resetInSeconds % 3600) / 60);
+      const resetInFormatted = `${hours}h ${minutes}m`;
+
+      return {
+        model: cap.model,
+        current: cap.current,
+        limit: cap.limit,
+        percentage: cap.percentage,
+        atWarning: cap.atWarning,
+        atCap: cap.atCap,
+        resetTime: nextReset,
+        resetIn: resetInSeconds,
+        resetInFormatted,
+        accounts: {
+          apiKeys: apiKeyCount,
+          oauth: oauthCount,
+          total: totalAccounts,
+        },
+      };
+    });
+
+    res.json({
+      quotas: summary,
+      poolStatus,
+    });
+  });
+
   router.post("/api/stats/caps/config", (req, res) => {
     const { resetTime, timezone } = req.body;
     if (resetTime) usageCapService.setResetTime(resetTime);

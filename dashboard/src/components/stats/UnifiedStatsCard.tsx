@@ -95,7 +95,7 @@ export function UnifiedStatsCard() {
 
         {/* Collapsed View */}
         {!expanded && (
-          <div style={{ height: 220 }} className="overflow-y-auto">
+          <div style={{ minHeight: 220 }} className="overflow-y-auto flex flex-col">
             <div className="space-y-3">
               {topModels.map(([modelName, modelStat]) => {
                 const capProgress = getProgress(modelName);
@@ -140,7 +140,7 @@ export function UnifiedStatsCard() {
 
         {/* Expanded View */}
         {expanded && (
-          <div style={{ height: 220 }} className="space-y-4 flex flex-col overflow-hidden">
+          <div style={{ minHeight: 220 }} className="space-y-4 flex flex-col overflow-hidden">
             {/* Filters */}
             <div className="flex gap-3">
               <select
