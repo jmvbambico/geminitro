@@ -5,6 +5,7 @@ const oauthService = require("./oauthService");
 const antigravityService = require("./antigravityService");
 const config = require("../config");
 const logger = require("../utils/logger");
+const { toProperCase } = require("../utils/modelNormalizer");
 
 let dynamicModels = [];
 
@@ -14,15 +15,28 @@ const ensureDataDir = () => {
   }
 };
 
+/**
+ * Load cached models from models.json.
+ * Supports both legacy array format and new object format.
+ * Legacy: ["model1", "model2"]
+ * New: { models: [...], aliases: {...}, quotaGroups: {...} }
+ */
 const loadCachedModels = () => {
   ensureDataDir();
   try {
     if (fs.existsSync(config.MODELS_FILE)) {
       const raw = fs.readFileSync(config.MODELS_FILE, "utf8");
-      const models = raw.trim() ? JSON.parse(raw) : [];
-      if (Array.isArray(models) && models.length > 0) {
-        dynamicModels = models;
-        logger.info(`Loaded ${models.length} cached models`);
+      const data = raw.trim() ? JSON.parse(raw) : [];
+
+      // Handle legacy array format
+      if (Array.isArray(data)) {
+        dynamicModels = data;
+        logger.info(`Loaded ${data.length} cached models (legacy format)`);
+      }
+      // Handle new object format
+      else if (data && typeof data === "object" && Array.isArray(data.models)) {
+        dynamicModels = data.models;
+        logger.info(`Loaded ${data.models.length} cached models`);
       }
     }
   } catch (e) {
@@ -30,13 +44,81 @@ const loadCachedModels = () => {
   }
 };
 
-const saveCachedModels = async (models) => {
+/**
+ * Save models to models.json in new object format.
+ * @param {string[]} models - Array of model names
+ * @param {object} options - Optional aliases and quotaGroups
+ */
+const saveCachedModels = async (models, options = {}) => {
   ensureDataDir();
   try {
-    await fs.promises.writeFile(config.MODELS_FILE, JSON.stringify(models, null, 2));
+    // Read existing data to preserve aliases and quotaGroups
+    let existingData = {};
+    if (fs.existsSync(config.MODELS_FILE)) {
+      const raw = fs.readFileSync(config.MODELS_FILE, "utf8");
+      const data = raw.trim() ? JSON.parse(raw) : [];
+      // Only preserve if it's the new object format
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        existingData = data;
+      }
+    }
+
+    // Build new schema
+    const newData = {
+      models,
+      aliases: options.aliases || existingData.aliases || {},
+      quotaGroups: options.quotaGroups || existingData.quotaGroups || {},
+    };
+
+    await fs.promises.writeFile(config.MODELS_FILE, JSON.stringify(newData, null, 2));
   } catch (e) {
     logger.error("Failed to save cached models", e);
   }
+};
+
+/**
+ * Get the full models.json data (models, aliases, quotaGroups).
+ */
+const getModelsData = () => {
+  ensureDataDir();
+  try {
+    if (fs.existsSync(config.MODELS_FILE)) {
+      const raw = fs.readFileSync(config.MODELS_FILE, "utf8");
+      const data = raw.trim() ? JSON.parse(raw) : [];
+
+      // Handle legacy array format
+      if (Array.isArray(data)) {
+        return { models: data, aliases: {}, quotaGroups: {} };
+      }
+      // Handle new object format
+      if (data && typeof data === "object") {
+        return {
+          models: data.models || [],
+          aliases: data.aliases || {},
+          quotaGroups: data.quotaGroups || {},
+        };
+      }
+    }
+  } catch (e) {
+    logger.error("Failed to read models data", e);
+  }
+  return { models: [], aliases: {}, quotaGroups: {} };
+};
+
+/**
+ * Update aliases in models.json.
+ */
+const updateAliases = async (aliases) => {
+  const data = getModelsData();
+  await saveCachedModels(data.models, { aliases, quotaGroups: data.quotaGroups });
+};
+
+/**
+ * Update quota groups in models.json.
+ */
+const updateQuotaGroups = async (quotaGroups) => {
+  const data = getModelsData();
+  await saveCachedModels(data.models, { aliases: data.aliases, quotaGroups });
 };
 
 const validateKey = async (apiKey) => {
@@ -64,6 +146,59 @@ const validateKey = async (apiKey) => {
   } catch (e) {
     return { valid: false, error: `Network error: ${e.message}` };
   }
+};
+
+/**
+ * Fetch available models for a specific key (API key or OAuth).
+ * Used for dynamic per-request model discovery.
+ * @param {object} keyObj - Key object from keyPool
+ * @returns {Promise<string[]>} Array of model names
+ */
+const fetchModelsForKey = async (keyObj) => {
+  if (!keyObj) return [];
+
+  if (keyObj.type === "api_key") {
+    // For API keys, use the standard Google API
+    try {
+      const url = `${config.GEMINI_API_BASE_URL}?key=${keyObj.key}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.models) {
+        const models = data.models
+          .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+          .map((m) => m.name.replace("models/", ""));
+        logger.info(`Discovered ${models.length} models for API key ${keyObj.key.slice(-6)}`);
+        return models;
+      }
+    } catch (e) {
+      logger.warn(`Failed to fetch models for API key ${keyObj.key.slice(-6)}: ${e.message}`);
+    }
+  } else if (keyObj.type === "oauth") {
+    // For OAuth, fetch from the appropriate service
+    try {
+      const { email } = await oauthService.getAccessTokenFromRefreshToken(
+        keyObj.key,
+        keyObj.source || "antigravity",
+      );
+
+      if (keyObj.source === "gemini_cli") {
+        const models = await antigravityService.fetchGeminiCliModels(keyObj.key, email);
+        logger.info(`Discovered ${models.length} models for Gemini CLI ${email}`);
+        return models;
+      } else {
+        const models = await antigravityService.fetchAntigravityModels(keyObj.key, email);
+        logger.info(`Discovered ${models.length} models for Antigravity ${email}`);
+        return models;
+      }
+    } catch (e) {
+      logger.warn(
+        `Failed to fetch models for OAuth ${keyObj.email || keyObj.key.slice(-6)}: ${e.message}`,
+      );
+    }
+  }
+
+  return [];
 };
 
 const convertContentToParts = (content) => {
@@ -183,7 +318,6 @@ const mapMessagesToGemini = (messages) => {
                 name: tc.function.name,
                 args,
                 id: tc.id, // Preserve ID for backends like Antigravity/Claude
-                thought_signature: "", // Required by Gemini API for function calls
               },
             });
           }
@@ -222,7 +356,10 @@ const mapMessagesToGemini = (messages) => {
 };
 
 const fetchGoogleModels = async () => {
-  // First, try to get models from API keys (standard Google API)
+  // Start fresh - collect all models then replace cache (prevents stale accumulation)
+  let freshModels = [];
+
+  // 1. Try to get models from API keys (standard Google API)
   const apiKeyObj = keyService.getOptimalKey([], null, "api_key");
 
   if (apiKeyObj) {
@@ -232,10 +369,12 @@ const fetchGoogleModels = async () => {
       const data = await response.json();
 
       if (data.models) {
-        dynamicModels = data.models
+        const apiModels = data.models
           .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
-          .map((m) => m.name.replace("models/", ""));
-        dynamicModels.sort((a, _b) => (a.includes("pro") ? -1 : 1));
+          .map((m) => m.name.replace("models/", ""))
+          .map(toProperCase); // Normalize to Proper Case
+        freshModels.push(...apiModels);
+        logger.info(`Fetched ${apiModels.length} models from Gemini API`);
       } else if (data.error) {
         logger.error("Failed to fetch models from Google", new Error(data.error.message));
       }
@@ -244,24 +383,15 @@ const fetchGoogleModels = async () => {
     }
   }
 
-  // Also get models from OAuth accounts and merge
+  // 2. Add models from OAuth accounts
   const oauthModels = keyService.getAllOAuthModels();
   if (oauthModels.length > 0) {
-    // Merge with existing models, deduplicate
-    const existingModels = dynamicModels || [];
-    const allModels = [...new Set([...existingModels, ...oauthModels])];
-    if (allModels.length !== existingModels.length) {
-      dynamicModels = allModels;
-    }
+    freshModels.push(...oauthModels);
+    logger.info(`Added ${oauthModels.length} models from OAuth accounts`);
   }
 
-  // Save and log final count (after merge)
-  const source = oauthModels.length > 0 ? "Gemini API + OAuth" : "Gemini API";
-  logger.modelRefresh(dynamicModels.length, source);
-  await saveCachedModels(dynamicModels);
-
-  // If no models at all, try OAuth as fallback (in case no API keys exist)
-  if ((!dynamicModels || dynamicModels.length === 0) && !apiKeyObj) {
+  // 3. If no models at all, try OAuth as fallback (in case no API keys exist)
+  if (freshModels.length === 0 && !apiKeyObj) {
     const oauthKeyObj = keyService.getOptimalKey([], null, "oauth");
     if (oauthKeyObj) {
       try {
@@ -269,21 +399,25 @@ const fetchGoogleModels = async () => {
           oauthKeyObj.key,
           oauthKeyObj.source || "antigravity",
         );
-        dynamicModels = await antigravityService.getAntigravityModels(oauthKeyObj.key, email);
-        logger.modelRefresh(dynamicModels.length, "OAuth (Antigravity)");
-        await saveCachedModels(dynamicModels);
-        return;
-      } catch (error) {
-        logger.warn(
-          `Failed to fetch dynamic models for OAuth key: ${error.message}. Using empty model list.`,
+        const antigravityModels = await antigravityService.getAntigravityModels(
+          oauthKeyObj.key,
+          email,
         );
-        dynamicModels = [];
-        logger.modelRefresh(dynamicModels.length, "OAuth (Antigravity)");
-        await saveCachedModels(dynamicModels);
-        return;
+        freshModels.push(...antigravityModels);
+        logger.info(`Fetched ${antigravityModels.length} models from Antigravity`);
+      } catch (error) {
+        logger.warn(`Failed to fetch OAuth models: ${error.message}`);
       }
     }
   }
+
+  // 4. Deduplicate and REPLACE cache (not append)
+  dynamicModels = [...new Set(freshModels)];
+  dynamicModels.sort((a, _b) => (a.includes("pro") ? -1 : 1));
+
+  const source = oauthModels.length > 0 ? "Gemini API + OAuth" : "Gemini API";
+  logger.modelRefresh(dynamicModels.length, `${source} (replaced cache)`);
+  await saveCachedModels(dynamicModels);
 };
 
 const getDynamicModels = () => dynamicModels;
@@ -481,7 +615,9 @@ async function generateContentWithApiKey(
 
 module.exports = {
   fetchGoogleModels,
+  fetchModelsForKey,
   getDynamicModels,
+  getModelsData,
   initializeModelFetching,
   generateContent,
   generateContentWithApiKey,
@@ -489,4 +625,6 @@ module.exports = {
   validateKey,
   loadCachedModels,
   saveCachedModels,
+  updateAliases,
+  updateQuotaGroups,
 };

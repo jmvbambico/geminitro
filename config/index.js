@@ -61,7 +61,7 @@ module.exports = {
       ",",
     ),
   },
-  MODEL_FETCH_INTERVAL: 3600000,
+  MODEL_FETCH_INTERVAL: 21600000, // 6 hours (matches llmproxy stability)
   INITIAL_MODEL_FETCH_DELAY: 2000,
   PROXY_API_KEY: process.env.PROXY_API_KEY || "geminitro",
   VERBOSE_LOGGING: process.env.GEMINITRO_VERBOSE_LOGGING === "true",

@@ -334,4 +334,134 @@ keyCmd
     await require("../src/cli/keys").importGeminiCli();
   });
 
+const aliasCmd = program.command("alias").description("Manage model aliases");
+
+aliasCmd
+  .command("add <alias> <target>")
+  .description("Add a model alias (e.g., gemini-3-pro-preview → gemini-3-pro-high)")
+  .action(async (alias, target) => {
+    const chalk = require("chalk");
+    const aliasService = require("../services/aliasService");
+
+    try {
+      await aliasService.addAlias(alias, target);
+      console.log(chalk.green(`\n  ✓ Added alias: ${alias} → ${target}\n`));
+    } catch (error) {
+      console.log(chalk.red(`\n  ✗ Failed to add alias: ${error.message}\n`));
+      process.exit(1);
+    }
+  });
+
+aliasCmd
+  .command("remove <alias>")
+  .description("Remove a model alias")
+  .action(async (alias) => {
+    const chalk = require("chalk");
+    const aliasService = require("../services/aliasService");
+
+    try {
+      const removed = await aliasService.removeAlias(alias);
+      if (removed) {
+        console.log(chalk.green(`\n  ✓ Removed alias: ${alias}\n`));
+      } else {
+        console.log(chalk.yellow(`\n  ⚠ Alias not found: ${alias}\n`));
+      }
+    } catch (error) {
+      console.log(chalk.red(`\n  ✗ Failed to remove alias: ${error.message}\n`));
+      process.exit(1);
+    }
+  });
+
+aliasCmd
+  .command("list")
+  .description("List all model aliases")
+  .action(() => {
+    const chalk = require("chalk");
+    const aliasService = require("../services/aliasService");
+
+    try {
+      const aliases = aliasService.listAliases();
+      const entries = Object.entries(aliases);
+
+      if (entries.length === 0) {
+        console.log(chalk.gray("\n  No aliases defined\n"));
+        return;
+      }
+
+      console.log(chalk.bold("\n  Model Aliases:\n"));
+      for (const [alias, target] of entries) {
+        console.log(`    ${chalk.cyan(alias)} → ${chalk.green(target)}`);
+      }
+      console.log("");
+    } catch (error) {
+      console.log(chalk.red(`\n  ✗ Failed to list aliases: ${error.message}\n`));
+      process.exit(1);
+    }
+  });
+
+const quotaCmd = program.command("quota-group").description("Manage quota groups");
+
+quotaCmd
+  .command("add <name> <models...>")
+  .description("Add or update a quota group (models that share quota limits)")
+  .action(async (name, models) => {
+    const chalk = require("chalk");
+    const quotaGroupService = require("../services/quotaGroupService");
+
+    try {
+      await quotaGroupService.addQuotaGroup(name, models);
+      console.log(chalk.green(`\n  ✓ Added quota group '${name}' with ${models.length} models\n`));
+    } catch (error) {
+      console.log(chalk.red(`\n  ✗ Failed to add quota group: ${error.message}\n`));
+      process.exit(1);
+    }
+  });
+
+quotaCmd
+  .command("remove <name>")
+  .description("Remove a quota group")
+  .action(async (name) => {
+    const chalk = require("chalk");
+    const quotaGroupService = require("../services/quotaGroupService");
+
+    try {
+      const removed = await quotaGroupService.removeQuotaGroup(name);
+      if (removed) {
+        console.log(chalk.green(`\n  ✓ Removed quota group: ${name}\n`));
+      } else {
+        console.log(chalk.yellow(`\n  ⚠ Quota group not found: ${name}\n`));
+      }
+    } catch (error) {
+      console.log(chalk.red(`\n  ✗ Failed to remove quota group: ${error.message}\n`));
+      process.exit(1);
+    }
+  });
+
+quotaCmd
+  .command("list")
+  .description("List all quota groups")
+  .action(() => {
+    const chalk = require("chalk");
+    const quotaGroupService = require("../services/quotaGroupService");
+
+    try {
+      const groups = quotaGroupService.getQuotaGroups();
+      const entries = Object.entries(groups);
+
+      if (entries.length === 0) {
+        console.log(chalk.gray("\n  No quota groups defined\n"));
+        return;
+      }
+
+      console.log(chalk.bold("\n  Quota Groups:\n"));
+      for (const [name, models] of entries) {
+        console.log(`    ${chalk.cyan(name)}: ${chalk.gray(models.join(", "))}`);
+      }
+      console.log("");
+    } catch (error) {
+      console.log(chalk.red(`\n  ✗ Failed to list quota groups: ${error.message}\n`));
+      process.exit(1);
+    }
+  });
+
 program.parse(process.argv);

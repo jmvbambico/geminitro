@@ -46,6 +46,26 @@ class QuotaService {
     logger.info(`Quota limit hit for ${model} - cooling down entire group: ${group.join(", ")}`);
     return group;
   }
+
+  /**
+   * Reload quota groups from models.json.
+   * Merges with config defaults (config.QUOTA_GROUPS).
+   */
+  reloadQuotaGroups() {
+    try {
+      const quotaGroupService = require("./quotaGroupService");
+      const config = require("../config");
+
+      // Merge models.json groups with config defaults
+      const fileGroups = quotaGroupService.getQuotaGroups();
+      this.quotaGroups = { ...config.QUOTA_GROUPS, ...fileGroups };
+
+      const groupCount = Object.keys(this.quotaGroups).length;
+      logger.info(`Loaded ${groupCount} quota groups from models.json + config`);
+    } catch (error) {
+      logger.warn(`Failed to reload quota groups: ${error.message}`);
+    }
+  }
 }
 
 module.exports = QuotaService;
