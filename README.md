@@ -22,16 +22,19 @@ GemiNitro is a production-grade reverse proxy for Google's Gemini API that sits 
 ### Core Features
 
 - **Intelligent key rotation** — weighted random, LRU, or sequential selection with configurable tolerance
+- **Cross-source routing** — automatic fallback across API keys, Antigravity OAuth, and Gemini CLI OAuth
+- **Dynamic model discovery** — per-key model fetching with 6-hour refresh, eliminates stale model errors
+- **Model aliasing** — create user-friendly aliases (e.g., `flash` → `gemini-2.0-flash`)
 - **Priority tiers** — free/standard/premium/enterprise with concurrency multipliers
 - **Usage quota management** — per-model caps with per-account tracking and combined limits
-- **Automatic cooldown & retry** — on 429 errors, marks key as cooling, tries next available key
 - **Quota groups** — share limits across model variants (e.g., gemini-2.0-flash + gemini-2.5-flash)
+- **Background quota refresh** — proactive 5-minute polling prevents rate limit errors for OAuth keys
+- **Automatic cooldown & retry** — on 429 errors, marks key as cooling, tries next available key
 - **Duplicate detection** — prevents adding the same API key or OAuth account twice
 - **OpenAI-compatible** — works with `/v1/chat/completions` and any OpenAI SDK
 - **Native Gemini REST** — also proxies `/v1/models/{model}:generateContent` paths directly
-- **Model discovery** — fetches available models from Google's API, refreshes hourly
 - **Live web dashboard** — real-time traffic, quota meters, key pool status, and system logs
-- **Comprehensive CLI** — `start`, `stats`, `install`, `key add/list/remove`, and more
+- **Comprehensive CLI** — `start`, `stats`, `install`, `key add/list/remove`, `alias`, `quota-group`, and more
 - **Coding agent integration** — one-command setup for OpenCode, Continue.dev, Aider, and others
 
 ---
@@ -253,9 +256,15 @@ geminitro update             Check for and apply the latest release
 geminitro key add <key>      Add a Gemini API key (validates key, refreshes model cache)
 geminitro key remove <frag>  Remove a key by its last 6+ characters
 geminitro key list           List all keys with status
+geminitro alias add <name> <target>  Create model alias (e.g., flash → gemini-2.0-flash)
+geminitro alias remove <name>        Remove model alias
+geminitro alias list                 List all configured aliases
+geminitro quota-group add <name> <models...>  Create quota group sharing limits
+geminitro quota-group remove <name>           Remove quota group
+geminitro quota-group list                    List all quota groups
 ```
 
-> `key add`, `key list`, and `key remove` work without the server running — they operate directly on `.geminitro/keys.json`.
+> **Note**: `key`, `alias`, and `quota-group` commands work without the server running — they operate directly on `.geminitro/` data files.
 
 ---
 
@@ -278,6 +287,13 @@ Set in `.env` or as environment variables. Copy `.env.example` to get started.
 | `ROTATION_MODE`                   | `balanced` | Key selection strategy: `balanced` (LRU), `sequential` (exhaust then rotate) |
 | `ROTATION_TOLERANCE`              | `0`        | Randomness in weighted selection: `0` = deterministic, `1` = fully random    |
 | `MAX_CONCURRENT_REQUESTS_PER_KEY` | `3`        | Concurrent request limit per API key (prevents quota exhaustion)             |
+
+#### Model Discovery & Refresh
+
+| Variable                 | Default    | Description                                              |
+| ------------------------ | ---------- | -------------------------------------------------------- |
+| `MODEL_FETCH_INTERVAL`   | `21600000` | Model list refresh interval (6 hours in milliseconds)    |
+| `QUOTA_REFRESH_INTERVAL` | `300000`   | OAuth quota polling interval (5 minutes in milliseconds) |
 
 #### Timeout Configuration (milliseconds)
 
@@ -312,6 +328,79 @@ QUOTA_GROUPS_GEMINI_PRO=gemini-2.0-flash,gemini-2.5-flash,gemini-2.0-flash-exp
 ```
 
 When any model in a group hits its quota, all models in that group enter cooldown.
+
+### New in v1.7.0: Enhanced Model Management
+
+#### Dynamic Model Discovery
+
+GemiNitro now fetches available models **per API key** every 6 hours, eliminating stale model errors:
+
+- **Automatic refresh** — Models list updates every 6 hours (`MODEL_FETCH_INTERVAL`)
+- **Per-key discovery** — Each key's supported models are fetched individually
+- **Request-driven** — Unknown models trigger immediate discovery attempt
+- **Stale model removal** — Models no longer available are automatically filtered out
+
+**Before v1.7.0:** Static model list caused "All keys exhausted" errors for experimental models like `gemini-2.0-flash-exp`.
+
+**After v1.7.0:** Dynamic discovery ensures only available models are attempted.
+
+#### Cross-Source Routing
+
+Automatic failover across multiple key sources with preference order:
+
+```
+API Keys (AI Studio) → Antigravity OAuth → Gemini CLI OAuth
+```
+
+When API keys are exhausted, GemiNitro automatically tries OAuth sources. No configuration needed — it just works.
+
+#### Model Aliasing
+
+Create short, memorable aliases for frequently-used models:
+
+```bash
+# Create aliases
+geminitro alias add flash gemini-2.0-flash
+geminitro alias add pro gemini-2.5-pro
+geminitro alias add thinking gemini-2.0-flash-thinking-exp
+
+# Use in requests
+curl -X POST http://localhost:7536/v1/chat/completions \
+  -H "Authorization: Bearer geminitro" \
+  -d '{"model": "flash", "messages": [...]}'
+```
+
+Aliases are stored in `.geminitro/models.json` and resolve transparently.
+
+#### Quota Groups
+
+Share quota limits across model variants (e.g., flash variants, pro variants):
+
+```bash
+# Group flash variants
+geminitro quota-group add flash-variants gemini-2.0-flash gemini-2.5-flash gemini-2.5-flash-lite
+
+# Group pro variants
+geminitro quota-group add pro-variants gemini-2.5-pro gemini-3-pro-preview
+```
+
+When any model in a group hits quota, **all models in the group enter cooldown**. Prevents quota exhaustion across similar models.
+
+#### Background Quota Refresh (OAuth Only)
+
+For Antigravity and Gemini CLI OAuth accounts, GemiNitro polls Google's quota API every 5 minutes:
+
+- **Proactive filtering** — Keys with <5% quota remaining are excluded **before** making requests
+- **Prevents 429 errors** — No more rate limit surprises
+- **Auto-recovery** — Keys automatically return when quota resets
+
+**Configuration:**
+
+```bash
+QUOTA_REFRESH_INTERVAL=300000  # 5 minutes (default)
+```
+
+---
 
 ### Usage Quota Management
 

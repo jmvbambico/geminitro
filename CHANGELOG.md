@@ -5,6 +5,95 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-03-02
+
+### Added
+
+#### Enhanced Model Management
+
+- **Dynamic Model Discovery**: Per-key model fetching with 6-hour refresh cycle (`MODEL_FETCH_INTERVAL=21600000`)
+  - Eliminates stale model errors (e.g., experimental models like `gemini-2.0-flash-exp`)
+  - Request-driven discovery when model unknown
+  - Automatic removal of models no longer available
+- **Cross-Source Routing**: Automatic failover across API keys → Antigravity OAuth → Gemini CLI OAuth
+  - Configurable source preference order
+  - Dynamic discovery across all sources
+  - Unified model availability
+- **Model Aliasing System**: Create user-friendly aliases for frequently-used models
+  - CLI commands: `geminitro alias add/remove/list`
+  - Stored in `.geminitro/models.json`
+  - Transparent resolution in request flow
+  - Example: `flash` → `gemini-2.0-flash`
+- **Quota Groups**: Share quota limits across model variants
+  - CLI commands: `geminitro quota-group add/remove/list`
+  - Default groups for Gemini CLI and Antigravity models
+  - When one model hits quota, entire group enters cooldown
+- **Background Quota Refresh**: Proactive 5-minute polling for OAuth keys (`QUOTA_REFRESH_INTERVAL=300000`)
+  - Filters keys with <5% quota remaining before making requests
+  - Prevents rate limit errors
+  - OAuth-only feature (Antigravity, Gemini CLI)
+- **Proper Case Normalization**: Consistent "Gemini 2.0 Flash" formatting across all sources
+  - User input normalized to Proper Case
+  - Converted to kebab-case for API calls
+  - Works with API keys, Antigravity OAuth, and Gemini CLI OAuth
+
+#### New CLI Commands
+
+- `geminitro alias add <name> <target>` - Create model alias
+- `geminitro alias remove <name>` - Remove model alias
+- `geminitro alias list` - List all aliases
+- `geminitro quota-group add <name> <models...>` - Create quota group
+- `geminitro quota-group remove <name>` - Remove quota group
+- `geminitro quota-group list` - List all quota groups
+
+#### New Configuration Options
+
+- `MODEL_FETCH_INTERVAL` - Model refresh interval (default: 6 hours)
+- `QUOTA_REFRESH_INTERVAL` - OAuth quota polling interval (default: 5 minutes)
+
+#### New Services & Utilities
+
+- `services/aliasService.js` - Model aliasing CRUD operations
+- `services/quotaGroupService.js` - Quota group management
+- `services/quotaRefreshService.js` - Background quota polling service
+- `src/cli/migrateModelsJson.js` - Auto-migration script for `models.json` schema
+- `utils/modelNormalizer.js` - Proper Case ↔ kebab-case conversion utilities
+
+### Changed
+
+- **Model Fetch Interval**: Increased from 1 hour to 6 hours for better performance
+- **models.json Schema**: Migrated from array format to object with `models`, `aliases`, and `quotaGroups`
+  - Auto-migration runs on server startup with timestamped backup
+  - Fully backward compatible
+- **Key Selection**: Enhanced `getOptimalKeyWithDiscovery()` with cross-source routing logic
+- **Model Normalization**: All models displayed in Proper Case, sent to API in kebab-case
+
+### Fixed
+
+- **Critical Bug**: Removed `thought_signature` field from function calling (rejected by Gemini API in gemini-2.5-pro)
+- **Stale Models**: Dynamic discovery prevents "all keys exhausted" errors for experimental models
+- **OAuth Fallback**: Cross-source routing ensures OAuth sources are tried when API keys exhausted
+
+### Testing
+
+- Added 14 new unit tests (74 total across 13 test suites)
+- `tests/keyService.crossSource.test.js` - 7 tests for cross-source routing
+- `tests/keyService.dynamicDiscovery.test.js` - 7 tests for dynamic model discovery
+- All tests passing with 100% backward compatibility
+
+### Migration
+
+**Automatic** - No manual action required. On first startup after upgrade:
+
+1. Server detects legacy `models.json` array format
+2. Creates timestamped backup (e.g., `models.json.backup.1234567890`)
+3. Migrates to new schema: `{ models: [...], aliases: {}, quotaGroups: {...} }`
+4. Pre-configures default quota groups for Antigravity and Gemini CLI
+
+### Breaking Changes
+
+**None.** Fully backward compatible with existing configurations.
+
 ## [1.5.5] - 2026-02-25
 
 ### Changed
