@@ -7,3 +7,4 @@ dist/
 .DS_Store
 dashboard/node_modules/
 dashboard/dist/
+tmp/
