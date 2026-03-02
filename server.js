@@ -66,9 +66,17 @@ app.use((req, res, next) => {
 });
 
 try {
+  // Run models.json migration if needed
+  const { migrateModelsJson } = require("./src/cli/migrateModelsJson");
+  migrateModelsJson();
+
   statsService.initialize();
   keyService.loadKeys();
   geminiService.initializeModelFetching();
+
+  // Start background quota refresh for OAuth keys
+  const quotaRefreshService = require("./services/quotaRefreshService");
+  quotaRefreshService.startQuotaRefresh();
 } catch (error) {
   console.error("Failed to initialize services:", error);
   process.exit(1);

@@ -168,6 +168,9 @@ const loadKeys = () => {
     }
 
     logger.info(`Loaded ${keyPool.length} keys`);
+
+    // Reload quota groups from models.json
+    quotaService.reloadQuotaGroups();
   } catch (e) {
     logger.error("Failed to load keys", e);
     keyPool = [];
@@ -264,7 +267,43 @@ const compareKeysByRotationMode = (a, b) => {
   }
 };
 
-const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) => {
+/**
+ * Check if a key has sufficient quota for a model based on baseline data.
+ * Returns false if quota is critically low (< 5%).
+ * @param {object} keyObj - The key object
+ * @param {string} model - The model name
+ * @returns {boolean} True if key has quota, false if too low
+ */
+const hasQuotaForModel = (keyObj, model) => {
+  if (keyObj.type !== "oauth") return true; // Only check OAuth keys
+  if (!model) return true;
+
+  try {
+    const quotaRefreshService = require("./quotaRefreshService");
+    const baseline = quotaRefreshService.getBaseline(keyObj.key, model);
+
+    if (!baseline) return true; // No baseline data - assume OK
+
+    // Check if quota is critically low (< 5%)
+    if (baseline.remaining < 0.05) {
+      logger.warn(
+        `Key ${keyObj.key.slice(-6)} has low quota for ${model}: ${(baseline.remaining * 100).toFixed(1)}%`,
+      );
+      return false;
+    }
+
+    return true;
+  } catch {
+    return true; // On error, assume OK
+  }
+};
+
+const getOptimalKey = (
+  excludeKeys = [],
+  desiredModel = null,
+  keyType = null,
+  sourceFilter = null,
+) => {
   // Check if model is at usage cap
   if (desiredModel && usageCapService.isAtCap(desiredModel)) {
     logger.warn(`Model ${desiredModel} at usage cap - trying next key`);
@@ -272,6 +311,12 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
   }
 
   const byType = (k) => (keyType ? k.type === keyType : true);
+  const bySource = (k) => {
+    // If no sourceFilter, accept all
+    if (!sourceFilter) return true;
+    // sourceFilter is set - only match OAuth keys with matching source
+    return k.type === "oauth" && k.source === sourceFilter;
+  };
 
   // Helper to select best key from filtered array
   const selectBest = (keys) => {
@@ -284,10 +329,12 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
       k.status === "active" &&
       !excludeKeys.includes(k.key) &&
       byType(k) &&
+      bySource(k) &&
       k.concurrentRequests < config.MAX_CONCURRENT_REQUESTS_PER_KEY &&
       desiredModel &&
       Array.isArray(k.supportedModels) &&
-      k.supportedModels.includes(desiredModel),
+      k.supportedModels.includes(desiredModel) &&
+      hasQuotaForModel(k, desiredModel), // Check quota baseline
   );
   const bestExplicit = selectBest(explicitMatch);
   if (bestExplicit) return bestExplicit;
@@ -301,8 +348,10 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
       k.status === "active" &&
       !excludeKeys.includes(k.key) &&
       byType(k) &&
+      bySource(k) &&
       k.concurrentRequests < config.MAX_CONCURRENT_REQUESTS_PER_KEY &&
-      (!Array.isArray(k.supportedModels) || k.supportedModels.length === 0),
+      (!Array.isArray(k.supportedModels) || k.supportedModels.length === 0) &&
+      hasQuotaForModel(k, desiredModel), // Check quota baseline
   );
   const bestUnknown = selectBest(unknownMatch);
   if (bestUnknown) return bestUnknown;
@@ -314,13 +363,13 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
         k.status === "active" &&
         !excludeKeys.includes(k.key) &&
         byType(k) &&
+        bySource(k) &&
         k.concurrentRequests < config.MAX_CONCURRENT_REQUESTS_PER_KEY,
     );
     const bestAny = selectBest(anyActive);
     if (bestAny) return bestAny;
   }
 
-  // 4. Cooldown Recovery: If no active keys, try to recover a cooldown key
   const now = Date.now();
   const recoveredKey = keyPool.find(
     (k) =>
@@ -335,6 +384,100 @@ const getOptimalKey = (excludeKeys = [], desiredModel = null, keyType = null) =>
     return recoveredKey;
   }
 
+  return null;
+};
+
+/**
+ * Get optimal key with dynamic model discovery.
+ * Async wrapper around getOptimalKey that fetches fresh models when needed.
+ * @param {string[]} excludeKeys - Keys to exclude
+ * @param {string|null} desiredModel - Model name to check support for
+ * @param {string|null} keyType - Filter by key type ("api_key" or "oauth")
+ * @returns {Promise<object|null>} Selected key object or null
+ */
+const getOptimalKeyWithDiscovery = async (
+  excludeKeys = [],
+  desiredModel = null,
+  keyType = null,
+) => {
+  // Define source preference order for cross-source routing
+  // API keys (free tier) → Antigravity OAuth → Gemini CLI OAuth
+  const sourcePreference = keyType
+    ? [keyType] // If keyType specified, honor it
+    : ["api_key", "oauth:antigravity", "oauth:gemini_cli"]; // Cross-source fallback order
+
+  // Try each source in preference order
+  for (const source of sourcePreference) {
+    const [type, provider] = source.split(":");
+    const typeFilter = type; // "api_key" or "oauth"
+    const sourceFilter = provider; // "antigravity" or "gemini_cli" (for OAuth only)
+
+    // Try standard selection for this source
+    let keyObj = getOptimalKey(
+      excludeKeys,
+      desiredModel,
+      typeFilter,
+      sourceFilter, // Pass source filter
+    );
+    if (keyObj) {
+      if (desiredModel) {
+        logger.info(
+          `Cross-source routing: ${desiredModel} selected from ${source} (key ${keyObj.key.slice(-6)})`,
+        );
+      }
+      return keyObj;
+    }
+
+    // If no key found and a model was requested, try dynamic discovery for this source
+    if (!keyObj && desiredModel) {
+      logger.info(
+        `No key found for ${desiredModel} in ${source} - attempting dynamic model discovery`,
+      );
+
+      // Get all active keys for this source (not in excludeKeys)
+      const candidateKeys = keyPool.filter(
+        (k) =>
+          k.status === "active" &&
+          !excludeKeys.includes(k.key) &&
+          k.type === typeFilter &&
+          (!sourceFilter || k.source === sourceFilter) && // Filter by source if specified
+          k.concurrentRequests < config.MAX_CONCURRENT_REQUESTS_PER_KEY,
+      );
+
+      // Try to discover models for each candidate key
+      for (const candidate of candidateKeys) {
+        try {
+          const geminiService = require("./geminiService");
+          const freshModels = await geminiService.fetchModelsForKey(candidate);
+
+          if (freshModels.includes(desiredModel)) {
+            // Update key's supportedModels
+            candidate.supportedModels = freshModels;
+            saveKeys();
+            logger.info(
+              `Dynamic discovery: ${desiredModel} found for ${source} key ${candidate.key.slice(-6)}`,
+            );
+            return candidate;
+          }
+        } catch (error) {
+          logger.warn(
+            `Failed to discover models for ${source} key ${candidate.key.slice(-6)}: ${error.message}`,
+          );
+        }
+      }
+
+      // No log needed - continue to next source
+    }
+  }
+
+  // All sources exhausted
+  if (desiredModel) {
+    logger.warn(
+      `Cross-source routing failed: ${desiredModel} not available on any source (tried: ${sourcePreference.join(", ")})`,
+    );
+  }
+
+  // Still no key - return null
   return null;
 };
 
@@ -832,6 +975,7 @@ module.exports = {
   loadKeys,
   saveKeys,
   getOptimalKey,
+  getOptimalKeyWithDiscovery,
   addKey,
   addOAuthToken,
   removeKey,
@@ -850,6 +994,8 @@ module.exports = {
   normalizeCredential,
   getCredentialFingerprint,
   detectDuplicates,
+  // Test helper: direct pool access (WARNING: only for tests!)
+  _getKeyPoolDirect: () => keyPool,
   acquireKey,
   releaseKey,
   quotaService,

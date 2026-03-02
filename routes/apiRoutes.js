@@ -1,6 +1,8 @@
 const express = require("express");
 const keyService = require("../services/keyService");
 const geminiService = require("../services/geminiService");
+const aliasService = require("../services/aliasService");
+const { toProperCase, toKebabCase } = require("../utils/modelNormalizer");
 const statsService = require("../services/statsService");
 const usageCapService = require("../services/usageCapService");
 const config = require("../config");
@@ -13,11 +15,16 @@ const { execSync } = require("child_process");
 
 const handleRequest = async (req, res, io, attemptedKeys = []) => {
   // Determine the target model up-front so key selection can honor model support
-  let targetModel = (req.body.model || "gemini-pro")
-    .replace("models/", "")
-    .replace(/^Proxy:\s*/, "");
-  // Normalize model to a simple string for matching against key metadata
-  const keyObj = keyService.getOptimalKey(attemptedKeys, targetModel);
+  let userModel = (req.body.model || "gemini-pro").replace("models/", "").replace(/^Proxy:\s*/, "");
+
+  // Normalize to Proper Case for consistency
+  let targetModel = toProperCase(userModel);
+
+  // Resolve model alias (e.g., "Gemini 3 Pro Preview" → "Gemini 3 Pro High")
+  targetModel = aliasService.resolveAlias(targetModel);
+
+  // Use dynamic model discovery to find a key that supports the model
+  const keyObj = await keyService.getOptimalKeyWithDiscovery(attemptedKeys, targetModel);
 
   if (!keyObj) {
     const poolStatus = keyService.getPoolStatus();
@@ -113,10 +120,13 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
       }
     }
 
+    // Convert Proper Case back to kebab-case for API call
+    const apiModel = toKebabCase(targetModel);
+
     if (req.body.stream) {
       const result = await geminiService.generateContent(
         currentKey,
-        targetModel,
+        apiModel,
         req.body.messages,
         generationConfig,
         true,
@@ -235,10 +245,12 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
         io.emit("stats_update", keyService.getSafeKeyPool());
       }
     } else {
+      // Convert targetModel (Proper Case) back to kebab-case for Gemini API
+      const apiModel = toKebabCase(targetModel);
       const startTime = Date.now();
       const result = await geminiService.generateContent(
         currentKey,
-        targetModel,
+        apiModel,
         req.body.messages,
         generationConfig,
         false,
@@ -311,9 +323,10 @@ const handleRequest = async (req, res, io, attemptedKeys = []) => {
 
       const newAttemptedKeys = [...attemptedKeys, currentKey];
       if (newAttemptedKeys.length < keyService.getKeyPool().length && !res.headersSent) {
+        const nextKey = await keyService.getOptimalKeyWithDiscovery(newAttemptedKeys, targetModel);
         logger.proxyRetry(
           targetModel,
-          keyService.getOptimalKey(newAttemptedKeys)?.key?.slice(-6) || "??",
+          nextKey?.key?.slice(-6) || "??",
           newAttemptedKeys.length + 1,
         );
         await new Promise((r) => setTimeout(r, 200));

@@ -1,5 +1,6 @@
 const oauthService = require("./oauthService");
 const logger = require("../utils/logger");
+const { toProperCase } = require("../utils/modelNormalizer");
 
 const ANTIGRAVITY_ENDPOINTS = {
   prod: "https://cloudcode-pa.googleapis.com",
@@ -12,11 +13,11 @@ const ANTIGRAVITY_MODELS_SOURCE_URL =
   "https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/main/docs/ANTIGRAVITY_API_SPEC.md";
 
 const DEFAULT_ANTIGRAVITY_MODELS = [
-  "claude-sonnet-4-6",
-  "claude-opus-4-6-thinking",
-  "gemini-3-pro-high",
-  "gemini-3-pro-low",
-  "gpt-oss-120b-medium",
+  "Claude Sonnet 4.6",
+  "Claude Opus 4.6 Thinking",
+  "Gemini 3 Pro High",
+  "Gemini 3 Pro Low",
+  "GPT-OSS 120B Medium",
 ];
 
 const DEFAULT_HEADERS = {
@@ -177,7 +178,10 @@ async function discoverModelsFromApi(refreshToken, provider = "antigravity") {
       [];
 
     const models = Array.isArray(candidates)
-      ? candidates.map((m) => (typeof m === "string" ? m : m.id || m.name || null)).filter(Boolean)
+      ? candidates
+          .map((m) => (typeof m === "string" ? m : m.id || m.name || null))
+          .filter(Boolean)
+          .map(toProperCase)
       : [];
 
     if (models.length > 0) {
@@ -217,7 +221,7 @@ async function fetchModelsFromGitHub() {
         if (cells.length >= 2) {
           const modelId = cells[1].trim().replace(/`/g, "");
           if (modelId && !modelId.includes("Model ID")) {
-            models.push(modelId);
+            models.push(toProperCase(modelId));
           }
         }
       } else if (inModelsTable && !line.startsWith("|")) {
@@ -361,7 +365,6 @@ async function generateContentAntigravity(
                 name: tc.function.name,
                 args,
                 id: tc.id,
-                thought_signature: "", // Required by Gemini API for function calls
               },
             });
           }
@@ -705,7 +708,14 @@ async function fetchGeminiCliModels(refreshToken, _email = null, provider = "gem
 
     const data = await response.json();
     if (Array.isArray(data.buckets)) {
-      const models = [...new Set(data.buckets.map((b) => b.modelId).filter(Boolean))];
+      const models = [
+        ...new Set(
+          data.buckets
+            .map((b) => b.modelId)
+            .filter(Boolean)
+            .map(toProperCase),
+        ),
+      ];
       if (models.length > 0) {
         logger.info(`Discovered ${models.length} models from retrieveUserQuota API`);
       }
